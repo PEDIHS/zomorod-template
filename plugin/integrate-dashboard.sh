@@ -61,16 +61,17 @@ import sys
 template_path = Path(sys.argv[1])
 runtime_path = Path(sys.argv[2])
 marker = sys.argv[3]
-html = template_path.read_text(encoding="utf-8")
+original = template_path.read_text(encoding="utf-8")
 runtime = runtime_path.read_text(encoding="utf-8")
 pattern = re.compile(rf'\s*<script id="{re.escape(marker)}">.*?</script>\s*', re.S)
-html = pattern.sub("\n", html)
+html = pattern.sub("\n", original)
 block = f'\n<script id="{marker}">\n{runtime}\n</script>\n'
 if "</body>" in html:
     html = html.replace("</body>", block + "</body>", 1)
 else:
     html += block
-template_path.write_text(html, encoding="utf-8")
+if html != original:
+    template_path.write_text(html, encoding="utf-8")
 PY
 }
 
@@ -88,7 +89,9 @@ main() {
   fi
 
   mkdir -p "${build_dir}/statics"
-  install -m 0644 "${ADMIN_JS}" "${build_dir}/statics/zomorod-special.js"
+  if ! cmp -s "${ADMIN_JS}" "${build_dir}/statics/zomorod-special.js" 2>/dev/null; then
+    install -m 0644 "${ADMIN_JS}" "${build_dir}/statics/zomorod-special.js"
+  fi
   inject_admin_loader "${build_dir}/index.html"
   inject_admin_loader "${build_dir}/404.html"
   log "dashboard integration is healthy at ${build_dir}"
