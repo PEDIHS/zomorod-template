@@ -57,6 +57,28 @@
   const normalizeHeaders = (headers) => Object.fromEntries(Object.entries(headers || {}).map(([k,v]) => [String(k).toLowerCase(), String(v ?? '')]));
   const getHeader = (headers, key) => headers[`${HEADER_PREFIX}${key}`] ?? '';
   const setHeader = (headers, key, value) => { headers[`${HEADER_PREFIX}${key}`] = String(value); };
+  const removeHeader = (headers, key) => {
+    const expected = `${HEADER_PREFIX}${key}`.toLowerCase();
+    Object.keys(headers).forEach((name) => {
+      if (name.toLowerCase() === expected) delete headers[name];
+    });
+  };
+  const encodeUtf8Base64 = (value) => {
+    const bytes = new TextEncoder().encode(String(value ?? ''));
+    let binary = '';
+    bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+    return btoa(binary);
+  };
+  const decodeUtf8Base64 = (value) => {
+    if (!value) return '';
+    try {
+      const binary = atob(value);
+      const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      return new TextDecoder().decode(bytes);
+    } catch {
+      return '';
+    }
+  };
   const getToken = () => localStorage.getItem('token') || '';
 
   async function api(path, options = {}) {
@@ -78,9 +100,11 @@
   function extract(settings) {
     const subscription = settings?.subscription || {};
     const headers = normalizeHeaders(subscription.response_headers || {});
+    const encodedStoreName = getHeader(headers, 'store-name-b64');
+    const legacyStoreName = getHeader(headers, 'store-name');
     return {
       enabled: asBool(getHeader(headers, 'enabled'), defaults.enabled),
-      storeName: getHeader(headers, 'store-name') || defaults.storeName,
+      storeName: decodeUtf8Base64(encodedStoreName) || legacyStoreName || defaults.storeName,
       showConfigs: asBool(getHeader(headers, 'show-configs'), defaults.showConfigs),
       showWireGuard: asBool(getHeader(headers, 'show-wireguard'), defaults.showWireGuard),
       showPing: asBool(getHeader(headers, 'show-ping'), defaults.showPing),
@@ -121,7 +145,7 @@
           <section class="z-card">
             <h2>◆ هویت و نمایش تمپلیت</h2>
             <div class="z-grid">
-              <div><label for="z-store">نام فروشگاه</label><input id="z-store" type="text" maxlength="80" value="${escapeHtml(cfg.storeName)}"><div class="z-help">در هدر صفحه اشتراک نمایش داده می‌شود و مستقل از Profile Title پاسارگارد است.</div></div>
+              <div><label for="z-store">نام فروشگاه</label><input id="z-store" type="text" maxlength="80" value="${escapeHtml(cfg.storeName)}"><div class="z-help">نام UTF-8 به‌صورت Base64 امن در تنظیمات مشترک ذخیره می‌شود تا Headerهای PasarGuard معتبر بمانند.</div></div>
               <div class="z-toggle"><span>فعال بودن لایه زمرد</span><input id="z-enabled" type="checkbox" ${cfg.enabled ? 'checked' : ''}></div>
               <div class="z-toggle"><span>نمایش کانفیگ‌های معمولی</span><input id="z-show-configs" type="checkbox" ${cfg.showConfigs ? 'checked' : ''}></div>
               <div class="z-toggle"><span>نمایش بخش WireGuard</span><input id="z-show-wg" type="checkbox" ${cfg.showWireGuard ? 'checked' : ''}></div>
@@ -183,8 +207,10 @@
       settings.subscription ||= {};
       const subscription = settings.subscription;
       const responseHeaders = { ...(subscription.response_headers || {}) };
+      const storeName = value('z-store') || defaults.storeName;
       setHeader(responseHeaders, 'enabled', checked('z-enabled'));
-      setHeader(responseHeaders, 'store-name', value('z-store') || defaults.storeName);
+      removeHeader(responseHeaders, 'store-name');
+      setHeader(responseHeaders, 'store-name-b64', encodeUtf8Base64(storeName));
       setHeader(responseHeaders, 'show-configs', checked('z-show-configs'));
       setHeader(responseHeaders, 'show-wireguard', checked('z-show-wg'));
       setHeader(responseHeaders, 'show-ping', checked('z-show-ping'));
