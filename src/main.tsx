@@ -35,7 +35,7 @@ if (normalizedBorderRadius) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem storageKey="zomorod-theme">
       <App />
       <Toaster />
     </ThemeProvider>
