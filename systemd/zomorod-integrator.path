@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch PasarGuard dashboard for Zomorod reintegration
+
+[Path]
+PathChanged=/opt/pasarguard/dashboard/build/index.html
+Unit=zomorod-integrator.service
+
+[Install]
+WantedBy=multi-user.target

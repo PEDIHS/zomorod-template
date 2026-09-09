@@ -1,0 +1,99 @@
+name: Zomorod CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Build and validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build subscription UI
+        run: bun run build
+        env:
+          VITE_FALLBACK_LANGUAGE: fa
+
+      - name: Validate browser integration JavaScript
+        run: |
+          node --check plugin/zomorod-special.js
+          node --check plugin/zomorod-runtime.js
+
+      - name: Validate shell scripts
+        run: |
+          bash -n install.sh
+          bash -n uninstall.sh
+          bash -n plugin/integrate-dashboard.sh
+
+      - name: Test self-healing integration idempotency
+        run: |
+          set -euo pipefail
+          sandbox="$(mktemp -d)"
+          trap 'rm -rf "$sandbox"' EXIT
+
+          mkdir -p "$sandbox/pasarguard/dashboard/build/statics"
+          mkdir -p "$sandbox/zomorod/plugin"
+          mkdir -p "$sandbox/templates/subscription"
+
+          cp plugin/zomorod-special.js "$sandbox/zomorod/plugin/zomorod-special.js"
+          cp plugin/zomorod-runtime.js "$sandbox/zomorod/plugin/zomorod-runtime.js"
+          cp plugin/integrate-dashboard.sh "$sandbox/zomorod/plugin/integrate-dashboard.sh"
+          chmod +x "$sandbox/zomorod/plugin/integrate-dashboard.sh"
+
+          printf '<!doctype html><html><body>dashboard</body></html>\n' > "$sandbox/pasarguard/dashboard/build/index.html"
+          cp "$sandbox/pasarguard/dashboard/build/index.html" "$sandbox/pasarguard/dashboard/build/404.html"
+          printf '<!doctype html><html><body>subscription</body></html>\n' > "$sandbox/templates/subscription/index.html"
+
+          sudo env \
+            ZOMOROD_ROOT="$sandbox/zomorod" \
+            PASARGUARD_ROOT="$sandbox/pasarguard" \
+            SUB_TEMPLATE="$sandbox/templates/subscription/index.html" \
+            "$sandbox/zomorod/plugin/integrate-dashboard.sh"
+
+          first_dashboard_sha="$(sha256sum "$sandbox/pasarguard/dashboard/build/index.html" | awk '{print $1}')"
+          first_subscription_sha="$(sha256sum "$sandbox/templates/subscription/index.html" | awk '{print $1}')"
+
+          sudo env \
+            ZOMOROD_ROOT="$sandbox/zomorod" \
+            PASARGUARD_ROOT="$sandbox/pasarguard" \
+            SUB_TEMPLATE="$sandbox/templates/subscription/index.html" \
+            "$sandbox/zomorod/plugin/integrate-dashboard.sh"
+
+          second_dashboard_sha="$(sha256sum "$sandbox/pasarguard/dashboard/build/index.html" | awk '{print $1}')"
+          second_subscription_sha="$(sha256sum "$sandbox/templates/subscription/index.html" | awk '{print $1}')"
+
+          test "$first_dashboard_sha" = "$second_dashboard_sha"
+          test "$first_subscription_sha" = "$second_subscription_sha"
+          test "$(grep -c 'zomorod-special-loader' "$sandbox/pasarguard/dashboard/build/index.html")" -eq 1
+          test "$(grep -c 'zomorod-runtime-inline' "$sandbox/templates/subscription/index.html")" -eq 1
+          cmp plugin/zomorod-special.js "$sandbox/pasarguard/dashboard/build/statics/zomorod-special.js"
+
+      - name: Validate installer help
+        run: bash install.sh --help >/dev/null
+
+      - name: Validate required artifacts
+        run: |
+          test -s dist/index.html
+          test -s plugin/zomorod-special.js
+          test -s plugin/zomorod-runtime.js
+          test -s systemd/zomorod-integrator.service
+          test -s systemd/zomorod-integrator.path
+          test -s systemd/zomorod-integrator.timer
