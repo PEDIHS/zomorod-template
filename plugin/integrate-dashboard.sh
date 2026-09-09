@@ -18,6 +18,10 @@ compose_available() {
   command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1
 }
 
+admin_asset_version() {
+  sha256sum "${ADMIN_JS}" | awk '{print substr($1,1,12)}'
+}
+
 detect_backend_service() {
   [[ -f "${COMPOSE_FILE}" ]] || return 1
   compose_available || return 1
@@ -103,47 +107,56 @@ find_container_subscription_template() {
 }
 
 inject_admin_loader() {
-  local html="$1"
+  local html="$1" version
   [[ -f "${html}" ]] || return 0
-  grep -q "${MARKER_ADMIN}" "${html}" && return 0
+  version="$(admin_asset_version)"
 
-  python3 - "${html}" "${MARKER_ADMIN}" <<'PY'
+  python3 - "${html}" "${MARKER_ADMIN}" "${version}" <<'PY'
 from pathlib import Path
+import re
 import sys
 
 path = Path(sys.argv[1])
 marker = sys.argv[2]
-html = path.read_text(encoding="utf-8")
-tag = f'<script id="{marker}" src="/statics/zomorod-special.js" defer></script>'
-if marker in html:
-    raise SystemExit(0)
-if "</body>" in html:
-    html = html.replace("</body>", f"  {tag}\n</body>", 1)
-else:
-    html += "\n" + tag + "\n"
-path.write_text(html, encoding="utf-8")
+version = sys.argv[3]
+original = path.read_text(encoding="utf-8")
+tag = f'<script id="{marker}" src="/statics/zomorod-special.js?v={version}" defer></script>'
+pattern = re.compile(rf'\s*<script\s+id=["\']{re.escape(marker)}["\'][^>]*>\s*</script>\s*', re.I)
+html, count = pattern.subn("\n  " + tag + "\n", original, count=1)
+if count == 0:
+    if "</body>" in html:
+        html = html.replace("</body>", f"  {tag}\n</body>", 1)
+    else:
+        html += "\n" + tag + "\n"
+if html != original:
+    path.write_text(html, encoding="utf-8")
 PY
 }
 
 inject_admin_loader_container() {
-  local cid="$1" html="$2"
+  local cid="$1" html="$2" version
   docker exec "${cid}" test -f "${html}" >/dev/null 2>&1 || return 0
+  version="$(admin_asset_version)"
 
-  docker exec -i "${cid}" python3 - "${html}" "${MARKER_ADMIN}" <<'PY'
+  docker exec -i "${cid}" python3 - "${html}" "${MARKER_ADMIN}" "${version}" <<'PY'
 from pathlib import Path
+import re
 import sys
 
 path = Path(sys.argv[1])
 marker = sys.argv[2]
-html = path.read_text(encoding="utf-8")
-tag = f'<script id="{marker}" src="/statics/zomorod-special.js" defer></script>'
-if marker in html:
-    raise SystemExit(0)
-if "</body>" in html:
-    html = html.replace("</body>", f"  {tag}\n</body>", 1)
-else:
-    html += "\n" + tag + "\n"
-path.write_text(html, encoding="utf-8")
+version = sys.argv[3]
+original = path.read_text(encoding="utf-8")
+tag = f'<script id="{marker}" src="/statics/zomorod-special.js?v={version}" defer></script>'
+pattern = re.compile(rf'\s*<script\s+id=["\']{re.escape(marker)}["\'][^>]*>\s*</script>\s*', re.I)
+html, count = pattern.subn("\n  " + tag + "\n", original, count=1)
+if count == 0:
+    if "</body>" in html:
+        html = html.replace("</body>", f"  {tag}\n</body>", 1)
+    else:
+        html += "\n" + tag + "\n"
+if html != original:
+    path.write_text(html, encoding="utf-8")
 PY
 }
 
