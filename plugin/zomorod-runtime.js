@@ -3,20 +3,90 @@
 
   const PREFIX = 'x-zomorod-';
   const DEFAULTS = {
-    enabled: false,
     storeName: 'زمرد',
-    showConfigs: true,
-    showWireGuard: true,
+    showConfigs: false,
+    showWireGuard: false,
     showPing: true,
     showApps: true,
-    showAnnouncement: true,
+    showAnnouncement: false,
     announcementMode: 'always',
     announcementTimes: '',
     announcementDuration: 60,
   };
 
-  const state = { config: { ...DEFAULTS }, raw: null };
+  const state = {
+    config: { ...DEFAULTS },
+    raw: null,
+    loaded: false,
+  };
+
   let applyQueued = false;
+  let refreshInFlight = false;
+
+  const specialCss = `
+    .zomorod-special-announcement{
+      position:relative!important;
+      isolation:isolate;
+      overflow:hidden!important;
+      border-color:rgba(16,185,129,.42)!important;
+      background:
+        radial-gradient(circle at 8% 18%,rgba(16,185,129,.16),transparent 34%),
+        radial-gradient(circle at 92% 82%,rgba(184,134,11,.18),transparent 36%),
+        linear-gradient(135deg,rgba(6,95,70,.10),rgba(4,120,87,.055) 48%,rgba(184,134,11,.09))!important;
+      box-shadow:0 12px 38px rgba(6,95,70,.12),0 0 0 1px rgba(184,134,11,.08),inset 0 1px 0 rgba(255,255,255,.08)!important;
+      animation:zomorodAnnBreathe 3.4s ease-in-out infinite;
+    }
+    .zomorod-special-announcement>*{position:relative;z-index:2}
+    .zomorod-special-announcement:before{
+      content:"";
+      position:absolute;
+      z-index:1;
+      width:38%;
+      height:220%;
+      top:-60%;
+      left:-52%;
+      pointer-events:none;
+      background:linear-gradient(90deg,transparent,rgba(255,255,255,.20),rgba(255,230,157,.17),transparent);
+      transform:rotate(14deg);
+      animation:zomorodAnnSweep 4.8s cubic-bezier(.3,.7,.2,1) infinite;
+    }
+    .zomorod-special-announcement .treasury-notice-icon{
+      color:#f4d57a!important;
+      border-color:rgba(184,134,11,.26)!important;
+      background:linear-gradient(145deg,#065f46,#047857 62%,#a06b16)!important;
+      box-shadow:0 0 0 1px rgba(255,255,255,.08),0 0 24px rgba(16,185,129,.20)!important;
+      animation:zomorodAnnIcon 2.1s ease-in-out infinite;
+    }
+    .zomorod-special-announcement h2{
+      color:#047857!important;
+      text-shadow:0 0 18px rgba(16,185,129,.12);
+    }
+    html.dark .zomorod-special-announcement h2{color:#6ee7b7!important}
+    @keyframes zomorodAnnSweep{
+      0%,12%{left:-52%;opacity:0}
+      22%{opacity:1}
+      58%{left:122%;opacity:.8}
+      70%,100%{left:122%;opacity:0}
+    }
+    @keyframes zomorodAnnBreathe{
+      0%,100%{transform:translateY(0);box-shadow:0 12px 38px rgba(6,95,70,.12),0 0 0 1px rgba(184,134,11,.08)}
+      50%{transform:translateY(-1px);box-shadow:0 16px 46px rgba(6,95,70,.18),0 0 0 1px rgba(184,134,11,.16),0 0 30px rgba(16,185,129,.08)}
+    }
+    @keyframes zomorodAnnIcon{
+      0%,100%{transform:scale(1) rotate(0deg)}
+      50%{transform:scale(1.06) rotate(-3deg)}
+    }
+    @media(prefers-reduced-motion:reduce){
+      .zomorod-special-announcement,.zomorod-special-announcement:before,.zomorod-special-announcement .treasury-notice-icon{animation:none!important}
+    }
+  `;
+
+  if (!document.getElementById('zomorod-runtime-style')) {
+    const style = document.createElement('style');
+    style.id = 'zomorod-runtime-style';
+    style.textContent = specialCss;
+    document.head.appendChild(style);
+  }
 
   const bool = (value, fallback) => {
     if (value == null || value === '') return fallback;
@@ -42,7 +112,6 @@
   const parseConfig = (raw) => {
     const headers = normalizeHeaders(raw?.headers);
     return {
-      enabled: bool(header(headers, 'enabled'), DEFAULTS.enabled),
       storeName: decodeUtf8Base64(header(headers, 'store-name-b64').trim()) || header(headers, 'store-name').trim() || DEFAULTS.storeName,
       showConfigs: bool(header(headers, 'show-configs'), DEFAULTS.showConfigs),
       showWireGuard: bool(header(headers, 'show-wireguard'), DEFAULTS.showWireGuard),
@@ -73,13 +142,13 @@
     }
   }
 
-  const setVisible = (selector, visible) => {
-    document.querySelectorAll(selector).forEach((node) => {
-      if (!(node instanceof HTMLElement)) return;
-      if (!node.hasAttribute('data-zomorod-original-display')) node.setAttribute('data-zomorod-original-display', node.style.display || '');
-      const target = visible ? (node.getAttribute('data-zomorod-original-display') || '') : 'none';
-      if (node.style.display !== target) node.style.display = target;
-    });
+  const setDisplay = (node, visible) => {
+    if (!(node instanceof HTMLElement)) return;
+    if (!node.hasAttribute('data-zomorod-original-display')) {
+      node.setAttribute('data-zomorod-original-display', node.style.display || '');
+    }
+    const target = visible ? (node.getAttribute('data-zomorod-original-display') || '') : 'none';
+    if (node.style.display !== target) node.style.display = target;
   };
 
   const updateBrand = (name) => {
@@ -91,14 +160,54 @@
     });
   };
 
-  const announcementIsActive = (config) => {
-    if (!config.showAnnouncement) return false;
+  const isWireGuardRow = (row) => {
+    const protocol = row.querySelector('.treasury-config-protocol')?.textContent?.trim().toUpperCase();
+    return protocol === 'WG' || protocol === 'WIREGUARD';
+  };
+
+  const applyConnections = (config) => {
+    const rows = [...document.querySelectorAll('.treasury-server-row')].filter((row) => row instanceof HTMLElement);
+    const hasWireGuard = rows.some(isWireGuardRow);
+
+    rows.forEach((row) => {
+      const visible = isWireGuardRow(row) ? config.showWireGuard : config.showConfigs;
+      setDisplay(row, visible);
+    });
+
+    const section = document.querySelector('.treasury-links-section');
+    const showSection = config.showConfigs || (config.showWireGuard && hasWireGuard);
+    setDisplay(section, showSection);
+    document.querySelectorAll('.treasury-quick-action').forEach((node) => setDisplay(node, showSection));
+
+    return hasWireGuard;
+  };
+
+  const applyPing = (visible) => {
+    document.querySelectorAll('.treasury-server-ping').forEach((node) => setDisplay(node, visible));
+  };
+
+  const applyApps = (visible) => {
+    document.querySelectorAll('.treasury-section-title').forEach((title) => {
+      const text = title.textContent || '';
+      if (!/اپلیکیشن|application/i.test(text)) return;
+      setDisplay(title, visible);
+      setDisplay(title.nextElementSibling, visible);
+    });
+  };
+
+  const nativeAnnouncement = () => {
+    const headers = normalizeHeaders(state.raw?.headers);
+    return String(headers.announce || '').trim();
+  };
+
+  const announcementIsInWindow = (config) => {
     if (config.announcementMode !== 'scheduled') return true;
     const times = String(config.announcementTimes || '')
       .split(',')
       .map((value) => value.trim())
       .filter((value) => /^([01]\d|2[0-3]):[0-5]\d$/.test(value));
     if (!times.length) return false;
+
     const now = new Date();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
     return times.some((time) => {
@@ -109,62 +218,15 @@
     });
   };
 
-  const setWireGuardRowsVisible = (visible) => {
-    document.querySelectorAll('.treasury-server-row').forEach((row) => {
-      if (!(row instanceof HTMLElement)) return;
-      const protocol = row.querySelector('.treasury-config-protocol')?.textContent?.trim().toUpperCase();
-      if (protocol !== 'WG' && protocol !== 'WIREGUARD') return;
-      if (!row.hasAttribute('data-zomorod-original-display')) row.setAttribute('data-zomorod-original-display', row.style.display || '');
-      const target = visible ? (row.getAttribute('data-zomorod-original-display') || '') : 'none';
-      if (row.style.display !== target) row.style.display = target;
-    });
-  };
+  const applyAnnouncement = (config) => {
+    const hasAnnouncement = nativeAnnouncement().length > 0;
+    const visible = config.showAnnouncement && hasAnnouncement && announcementIsInWindow(config);
 
-  const ensureWireGuardCard = (config) => {
-    const existing = document.getElementById('zomorod-wireguard-card');
-    if (!config.showWireGuard) {
-      existing?.remove();
-      return;
-    }
-    if (existing) return;
-    const anchor = document.querySelector('.treasury-links-section') || document.querySelector('.treasury-content-stack');
-    if (!anchor || !(anchor.parentElement instanceof HTMLElement)) return;
-
-    const section = document.createElement('section');
-    section.id = 'zomorod-wireguard-card';
-    section.className = 'treasury-notice animate-fadeIn';
-    section.style.marginTop = '1rem';
-    section.innerHTML = '<div class="treasury-notice-icon" aria-hidden="true">WG</div><div class="min-w-0 flex-1"><h2>WireGuard</h2><p>دانلود مستقیم فایل استاندارد WireGuard از PasarGuard</p></div><button type="button" class="ios-primary-button" data-zomorod-wg-download>دانلود .conf</button>';
-    anchor.insertAdjacentElement('afterend', section);
-
-    const button = section.querySelector('[data-zomorod-wg-download]');
-    button?.addEventListener('click', async () => {
-      const original = button.textContent;
-      button.disabled = true;
-      if (button.textContent !== 'در حال دریافت…') button.textContent = 'در حال دریافت…';
-      try {
-        const response = await fetch(`${window.location.origin}${basePath()}/wireguard`, { headers: { Accept: 'text/plain,*/*' }, cache: 'no-store' });
-        if (!response.ok) throw new Error(`WireGuard HTTP ${response.status}`);
-        const content = await response.text();
-        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = 'wireguard.conf';
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(url);
-        button.textContent = 'دانلود شد ✓';
-      } catch (error) {
-        console.error('[Zomorod] WireGuard download failed', error);
-        button.textContent = 'WireGuard در دسترس نیست';
-      } finally {
-        setTimeout(() => {
-          button.disabled = false;
-          button.textContent = original;
-        }, 1800);
-      }
+    document.querySelectorAll('.treasury-notice').forEach((notice) => {
+      if (!(notice instanceof HTMLElement)) return;
+      setDisplay(notice, visible);
+      if (visible) notice.classList.add('zomorod-special-announcement');
+      else notice.classList.remove('zomorod-special-announcement');
     });
   };
 
@@ -174,40 +236,24 @@
       node.style.display = node.getAttribute('data-zomorod-original-display') || '';
       node.removeAttribute('data-zomorod-original-display');
     });
-    document.getElementById('zomorod-wireguard-card')?.remove();
+    document.querySelectorAll('.zomorod-special-announcement').forEach((node) => node.classList.remove('zomorod-special-announcement'));
     document.documentElement.removeAttribute('data-zomorod');
   };
 
   const apply = () => {
     applyQueued = false;
+    if (!state.loaded) return;
+
     const config = state.config;
-    if (!config.enabled) {
-      restoreOriginalUi();
-      return;
-    }
-
     updateBrand(config.storeName);
-    setVisible('.treasury-links-section', config.showConfigs);
-    setVisible('.treasury-quick-action', config.showConfigs);
-    setVisible('.treasury-server-ping', config.showPing);
-    setVisible('.treasury-notice:not(#zomorod-wireguard-card)', announcementIsActive(config));
-    setWireGuardRowsVisible(config.showWireGuard);
+    applyConnections(config);
+    applyPing(config.showPing);
+    applyApps(config.showApps);
+    applyAnnouncement(config);
 
-    document.querySelectorAll('.treasury-section-title').forEach((title) => {
-      const text = title.textContent || '';
-      if (!/اپلیکیشن|application/i.test(text)) return;
-      if (title instanceof HTMLElement) {
-        const target = config.showApps ? '' : 'none';
-        if (title.style.display !== target) title.style.display = target;
-      }
-      if (title.nextElementSibling instanceof HTMLElement) {
-        const target = config.showApps ? '' : 'none';
-        if (title.nextElementSibling.style.display !== target) title.nextElementSibling.style.display = target;
-      }
-    });
-
-    ensureWireGuardCard(config);
-    if (document.documentElement.getAttribute('data-zomorod') !== 'active') document.documentElement.setAttribute('data-zomorod', 'active');
+    if (document.documentElement.getAttribute('data-zomorod') !== 'active') {
+      document.documentElement.setAttribute('data-zomorod', 'active');
+    }
   };
 
   const scheduleApply = () => {
@@ -216,18 +262,33 @@
     requestAnimationFrame(apply);
   };
 
-  const start = async () => {
+  const refreshSettings = async ({ initial = false } = {}) => {
+    if (refreshInFlight) return;
+    refreshInFlight = true;
     try {
-      state.raw = await fetchRaw();
-      state.config = parseConfig(state.raw);
+      const raw = await fetchRaw();
+      state.raw = raw;
+      state.config = parseConfig(raw);
+      state.loaded = true;
+      scheduleApply();
     } catch (error) {
-      console.warn('[Zomorod] runtime settings unavailable; original template remains untouched.', error);
-      state.config = { ...DEFAULTS, enabled: false };
+      if (initial) {
+        console.warn('[Zomorod] runtime settings unavailable; original template remains untouched.', error);
+        restoreOriginalUi();
+        state.loaded = false;
+      } else {
+        console.warn('[Zomorod] runtime refresh failed; keeping last known settings.', error);
+      }
+    } finally {
+      refreshInFlight = false;
     }
+  };
 
-    apply();
+  const start = async () => {
+    await refreshSettings({ initial: true });
     const observer = new MutationObserver(scheduleApply);
     observer.observe(document.documentElement, { subtree: true, childList: true });
+    window.setInterval(() => refreshSettings(), 60000);
     window.setInterval(scheduleApply, 30000);
   };
 
