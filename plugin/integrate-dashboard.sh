@@ -121,9 +121,11 @@ marker = sys.argv[2]
 version = sys.argv[3]
 original = path.read_text(encoding="utf-8")
 tag = f'<script id="{marker}" src="/statics/zomorod-special.js?v={version}" defer></script>'
-pattern = re.compile(rf'\s*<script\s+id=["\']{re.escape(marker)}["\'][^>]*>\s*</script>\s*', re.I)
-html, count = pattern.subn("\n  " + tag + "\n", original, count=1)
-if count == 0:
+pattern = re.compile(rf'<script\s+id=["\']{re.escape(marker)}["\'][^>]*>\s*</script>', re.I)
+if pattern.search(original):
+    html = pattern.sub(tag, original, count=1)
+else:
+    html = original
     if "</body>" in html:
         html = html.replace("</body>", f"  {tag}\n</body>", 1)
     else:
@@ -148,9 +150,11 @@ marker = sys.argv[2]
 version = sys.argv[3]
 original = path.read_text(encoding="utf-8")
 tag = f'<script id="{marker}" src="/statics/zomorod-special.js?v={version}" defer></script>'
-pattern = re.compile(rf'\s*<script\s+id=["\']{re.escape(marker)}["\'][^>]*>\s*</script>\s*', re.I)
-html, count = pattern.subn("\n  " + tag + "\n", original, count=1)
-if count == 0:
+pattern = re.compile(rf'<script\s+id=["\']{re.escape(marker)}["\'][^>]*>\s*</script>', re.I)
+if pattern.search(original):
+    html = pattern.sub(tag, original, count=1)
+else:
+    html = original
     if "</body>" in html:
         html = html.replace("</body>", f"  {tag}\n</body>", 1)
     else:
