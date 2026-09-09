@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.1.0';
+  const VERSION = '4.2.0';
   const HEADER_PREFIX = 'x-zomorod-';
   const NAV_ID = 'zomorod-special-nav';
   const ROOT_ID = 'zomorod-special-root';
@@ -12,13 +12,12 @@
   let maintainQueued = false;
 
   const defaults = {
-    enabled: false,
     storeName: 'زمرد',
-    showConfigs: true,
-    showWireGuard: true,
+    showConfigs: false,
+    showWireGuard: false,
     showPing: true,
     showApps: true,
-    showAnnouncement: true,
+    showAnnouncement: false,
     announcementMode: 'always',
     announcementTimes: '',
     announcementDuration: 60,
@@ -27,8 +26,8 @@
   const css = `
     #${NAV_ID}{position:relative;flex-shrink:0;white-space:nowrap}
     #${NAV_ID} .z-tab{display:flex;align-items:center;gap:.38rem}
-    #${NAV_ID} .z-tab-gem{width:1rem;height:1rem;color:#059669}
-    #${NAV_ID} .z-tab-badge{font-size:.56rem;font-weight:800;line-height:1;padding:.2rem .34rem;border-radius:999px;color:#fff;background:linear-gradient(135deg,#047857,#065f46 58%,#9a6a17);box-shadow:0 0 0 1px rgba(184,134,11,.18)}
+    #${NAV_ID} .z-tab-gem{width:1rem;height:1rem;color:#059669;filter:drop-shadow(0 0 5px rgba(16,185,129,.28))}
+    #${NAV_ID} .z-tab-badge{font-size:.56rem;font-weight:800;line-height:1;padding:.2rem .34rem;border-radius:999px;color:#fff;background:linear-gradient(135deg,#047857,#065f46 58%,#9a6a17);box-shadow:0 0 0 1px rgba(184,134,11,.18),0 2px 8px rgba(6,95,70,.15)}
     [data-zomorod-active="1"] > button:not(#${NAV_ID}){border-bottom-color:transparent!important;color:hsl(var(--muted-foreground))!important}
     #${NAV_ID}[data-z-active="true"]{border-bottom-width:2px!important;border-bottom-color:#059669!important;color:hsl(var(--foreground))!important;background:linear-gradient(180deg,transparent,rgba(16,185,129,.05))}
 
@@ -65,8 +64,8 @@
     #${ROOT_ID} textarea{min-height:88px;resize:vertical;line-height:1.65}
     #${ROOT_ID} input:focus,#${ROOT_ID} textarea:focus,#${ROOT_ID} select:focus{border-color:rgba(5,150,105,.62);box-shadow:0 0 0 3px rgba(16,185,129,.09)}
     #${ROOT_ID} .z-help{margin-top:.34rem;font-size:.66rem;color:hsl(var(--muted-foreground));line-height:1.6}
-
     #${ROOT_ID} .z-toggle{min-height:55px;display:flex;align-items:center;justify-content:space-between;gap:1rem;border:1px solid hsl(var(--border));background:hsl(var(--background)/.46);border-radius:var(--radius,.5rem);padding:.62rem .72rem}
+    #${ROOT_ID} .z-toggle.is-special{border-color:rgba(184,134,11,.20);background:linear-gradient(135deg,rgba(6,95,70,.035),rgba(184,134,11,.045))}
     #${ROOT_ID} .z-toggle-title{font-size:.77rem;font-weight:700}
     #${ROOT_ID} .z-toggle-sub{font-size:.64rem;color:hsl(var(--muted-foreground));margin-top:.12rem;line-height:1.5}
     #${ROOT_ID} input[type=checkbox]{appearance:none;width:36px;height:20px;flex:0 0 auto;border-radius:999px;background:hsl(var(--input));border:1px solid hsl(var(--border));position:relative;cursor:pointer;transition:.18s}
@@ -77,7 +76,6 @@
     #${ROOT_ID} .z-chip{font-size:.66rem;border:1px solid rgba(16,185,129,.18);border-radius:999px;padding:.3rem .5rem;background:rgba(16,185,129,.055)}
     #${ROOT_ID} .z-native{font-size:.61rem;padding:.18rem .36rem;border-radius:.4rem;background:rgba(184,134,11,.09);border:1px solid rgba(184,134,11,.17);color:#8a5b08}
     html.dark #${ROOT_ID} .z-native{color:#deb24b}
-
     #${ROOT_ID} .z-actions{position:sticky;bottom:.5rem;z-index:2;margin-top:1rem;display:flex;align-items:center;justify-content:space-between;gap:.8rem;flex-wrap:wrap;border:1px solid hsl(var(--border));border-radius:calc(var(--radius,.5rem) + .2rem);padding:.72rem .8rem;background:hsl(var(--background)/.90);backdrop-filter:blur(12px);box-shadow:0 -8px 24px rgba(0,0,0,.035)}
     #${ROOT_ID} .z-save{border:0;border-radius:var(--radius,.5rem);padding:.6rem .92rem;font:inherit;font-size:.78rem;font-weight:800;color:#fff;background:linear-gradient(135deg,#047857,#065f46 68%,#8f6418);box-shadow:0 6px 16px rgba(6,95,70,.16);cursor:pointer}
     #${ROOT_ID} .z-save:disabled{opacity:.55;cursor:wait}
@@ -87,10 +85,12 @@
     #${ROOT_ID} .z-error{border:1px solid rgba(220,38,38,.24);background:rgba(220,38,38,.05);border-radius:.7rem;padding:.9rem;color:#dc2626;font-size:.76rem;line-height:1.7}
   `;
 
-  const style = document.createElement('style');
-  style.id = 'zomorod-special-style';
-  style.textContent = css;
-  document.head.appendChild(style);
+  if (!document.getElementById('zomorod-special-style')) {
+    const style = document.createElement('style');
+    style.id = 'zomorod-special-style';
+    style.textContent = css;
+    document.head.appendChild(style);
+  }
 
   const icons = {
     gem: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6.5 3.5h11L22 9l-10 12L2 9l4.5-5.5Z"/><path d="M2 9h20M8 9l4 12 4-12M6.5 3.5 8 9m9.5-5.5L16 9"/></svg>',
@@ -148,7 +148,6 @@
     const subscription = settings?.subscription || {};
     const headers = normalizeHeaders(subscription.response_headers || {});
     return {
-      enabled: asBool(getHeader(headers, 'enabled'), defaults.enabled),
       storeName: decodeUtf8Base64(getHeader(headers, 'store-name-b64')) || getHeader(headers, 'store-name') || defaults.storeName,
       showConfigs: asBool(getHeader(headers, 'show-configs'), defaults.showConfigs),
       showWireGuard: asBool(getHeader(headers, 'show-wireguard'), defaults.showWireGuard),
@@ -242,24 +241,25 @@
     const cfg = extract(settings);
     const apps = cfg.apps.length ? cfg.apps.map((app) => `<span class="z-chip">${escapeHtml(app.name)} · ${escapeHtml(app.platform)}</span>`).join('') : '<span class="z-help">اپلیکیشنی در PasarGuard تعریف نشده است.</span>';
     const html = `
-      <section class="z-hero"><div class="z-hero-row"><div class="z-brand"><div class="z-logo">${icons.gem}</div><div><div class="z-title-row"><h2 class="z-title">Zomorod Template</h2><span class="z-special">SPECIAL</span></div><div class="z-subtitle">کنترل قابلیت‌های زمرد، بدون تغییر Skin اصلی PasarGuard و بدون Popup</div></div></div><span class="z-version">v${VERSION}</span></div></section>
+      <section class="z-hero"><div class="z-hero-row"><div class="z-brand"><div class="z-logo">${icons.gem}</div><div><div class="z-title-row"><h2 class="z-title">Zomorod Template</h2><span class="z-special">SPECIAL</span></div><div class="z-subtitle">قابلیت‌های ویژه زمرد، بدون دکمه کلی Runtime و بدون Popup</div></div></div><span class="z-version">v${VERSION}</span></div></section>
       <div class="z-content">
-        <section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.sliders}</span>هویت و نمایش تمپلیت</h3><div class="z-card-note">Runtime به‌صورت پیش‌فرض خاموش است تا ظاهر اصلی تمپلیت دقیقاً دست‌نخورده بماند.</div></div></div><div class="z-grid">
-          <div class="z-field"><label for="z-store">نام فروشگاه</label><input id="z-store" type="text" maxlength="80" value="${escapeHtml(cfg.storeName)}"><div class="z-help">فقط زمانی روی صفحه کاربر اعمال می‌شود که لایه زمرد را فعال کنی.</div></div>
-          <div class="z-toggle"><div><div class="z-toggle-title">فعال کردن Runtime زمرد</div><div class="z-toggle-sub">خاموش = ظاهر و رفتار اصلی تمپلیت بدون تغییر</div></div><input id="z-enabled" type="checkbox" ${cfg.enabled ? 'checked' : ''}></div>
-          <div class="z-toggle"><div><div class="z-toggle-title">نمایش کانفیگ‌های معمولی</div><div class="z-toggle-sub">VLESS / VMess / Trojan و سایر لینک‌ها</div></div><input id="z-show-configs" type="checkbox" ${cfg.showConfigs ? 'checked' : ''}></div>
-          <div class="z-toggle"><div><div class="z-toggle-title">نمایش WireGuard</div><div class="z-toggle-sub">دانلود Native فایل WireGuard</div></div><input id="z-show-wg" type="checkbox" ${cfg.showWireGuard ? 'checked' : ''}></div>
-          <div class="z-toggle"><div><div class="z-toggle-title">نمایش Ping</div><div class="z-toggle-sub">رفتار نمایشی فعلی تمپلیت</div></div><input id="z-show-ping" type="checkbox" ${cfg.showPing ? 'checked' : ''}></div>
+        <section class="z-card"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.sliders}</span>تنظیمات عمومی</h3><div class="z-card-note">قابلیت‌های عمومی به‌صورت پیش‌فرض فعال‌اند؛ فقط امکانات Special کنترل جدا دارند.</div></div></div><div class="z-grid">
+          <div class="z-field"><label for="z-store">نام فروشگاه</label><input id="z-store" type="text" maxlength="80" value="${escapeHtml(cfg.storeName)}"></div>
+          <div class="z-toggle"><div><div class="z-toggle-title">نمایش Ping</div><div class="z-toggle-sub">نمایش پینگ تخمینی فعلی تمپلیت</div></div><input id="z-show-ping" type="checkbox" ${cfg.showPing ? 'checked' : ''}></div>
           <div class="z-toggle"><div><div class="z-toggle-title">نمایش اپلیکیشن‌ها</div><div class="z-toggle-sub">Applications تعریف‌شده در PasarGuard</div></div><input id="z-show-apps" type="checkbox" ${cfg.showApps ? 'checked' : ''}></div>
-        </div></section>
-        <section class="z-card"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.link}</span>PasarGuard Native</h3><div class="z-card-note">تنظیمات مشترک، بدون دیتابیس دوم.</div></div><span class="z-native">SHARED SETTINGS</span></div><div class="z-grid">
-          <div class="z-toggle"><div><div class="z-toggle-title">Allow browser config</div></div><input id="z-native-browser" type="checkbox" ${cfg.allowBrowserConfig ? 'checked' : ''}></div>
-          <div class="z-toggle"><div><div class="z-toggle-title">Links format</div></div><input id="z-native-links" type="checkbox" ${cfg.nativeLinks ? 'checked' : ''}></div>
-          <div class="z-toggle"><div><div class="z-toggle-title">WireGuard format</div></div><input id="z-native-wg" type="checkbox" ${cfg.nativeWireGuard ? 'checked' : ''}></div>
           <div class="z-field"><label>اپلیکیشن‌های تعریف‌شده</label><div class="z-apps">${apps}</div></div>
         </div></section>
-        <section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.bell}</span>اعلان هوشمند</h3><div class="z-card-note">اعلان Native پاسارگارد با زمان‌بندی اختیاری.</div></div></div><div class="z-grid">
-          <div class="z-toggle"><div><div class="z-toggle-title">نمایش اعلان در زمرد</div></div><input id="z-show-ann" type="checkbox" ${cfg.showAnnouncement ? 'checked' : ''}></div>
+
+        <section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.link}</span>Special Connections</h3><div class="z-card-note">این گزینه‌ها فقط نحوه نمایش کانفیگ‌های واقعی موجود در Subscription را کنترل می‌کنند؛ چیزی ساختگی اضافه نمی‌شود.</div></div><span class="z-native">SPECIAL</span></div><div class="z-grid">
+          <div class="z-toggle is-special"><div><div class="z-toggle-title">نمایش کانفیگ‌های معمولی</div><div class="z-toggle-sub">VLESS / VMess / Trojan / SS و سایر کانفیگ‌های غیر WireGuard</div></div><input id="z-show-configs" type="checkbox" ${cfg.showConfigs ? 'checked' : ''}></div>
+          <div class="z-toggle is-special"><div><div class="z-toggle-title">نمایش WireGuard</div><div class="z-toggle-sub">فقط اگر WG واقعاً داخل لینک‌های Subscription وجود داشته باشد نمایش داده می‌شود</div></div><input id="z-show-wg" type="checkbox" ${cfg.showWireGuard ? 'checked' : ''}></div>
+          <div class="z-toggle"><div><div class="z-toggle-title">Allow browser config</div></div><input id="z-native-browser" type="checkbox" ${cfg.allowBrowserConfig ? 'checked' : ''}></div>
+          <div class="z-toggle"><div><div class="z-toggle-title">Links format</div></div><input id="z-native-links" type="checkbox" ${cfg.nativeLinks ? 'checked' : ''}></div>
+          <div class="z-toggle"><div><div class="z-toggle-title">WireGuard native format</div><div class="z-toggle-sub">تنظیم Native خود PasarGuard</div></div><input id="z-native-wg" type="checkbox" ${cfg.nativeWireGuard ? 'checked' : ''}></div>
+        </div></section>
+
+        <section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.bell}</span>Special Announcement</h3><div class="z-card-note">وقتی اعلان واقعی ارسال شود، داخل تمپلیت با افکت Emerald/Gold و انیمیشن ویژه برجسته می‌شود.</div></div><span class="z-native">SPECIAL</span></div><div class="z-grid">
+          <div class="z-toggle is-special"><div><div class="z-toggle-title">نمایش اعلان ویژه</div><div class="z-toggle-sub">بدون متن اعلان، هیچ کارت نمایشی ساختگی نشان داده نمی‌شود</div></div><input id="z-show-ann" type="checkbox" ${cfg.showAnnouncement ? 'checked' : ''}></div>
           <div class="z-field"><label for="z-ann-mode">حالت نمایش</label><select id="z-ann-mode"><option value="always" ${cfg.announcementMode === 'always' ? 'selected' : ''}>همیشه</option><option value="scheduled" ${cfg.announcementMode === 'scheduled' ? 'selected' : ''}>ساعت‌بندی‌شده</option></select></div>
           <div class="z-field"><label for="z-ann-times">ساعت‌ها</label><input id="z-ann-times" type="text" dir="ltr" placeholder="09:00,14:30,21:00" value="${escapeHtml(cfg.announcementTimes)}"></div>
           <div class="z-field"><label for="z-ann-duration">مدت هر نوبت (دقیقه)</label><input id="z-ann-duration" type="number" min="1" max="1440" value="${escapeHtml(cfg.announcementDuration)}"></div>
@@ -285,9 +285,9 @@
       settings.subscription ||= {};
       const subscription = settings.subscription;
       const responseHeaders = { ...(subscription.response_headers || {}) };
+      removeHeader(responseHeaders, 'enabled');
       removeHeader(responseHeaders, 'store-name');
       setHeader(responseHeaders, 'store-name-b64', encodeUtf8Base64(value('z-store') || defaults.storeName));
-      setHeader(responseHeaders, 'enabled', checked('z-enabled'));
       setHeader(responseHeaders, 'show-configs', checked('z-show-configs'));
       setHeader(responseHeaders, 'show-wireguard', checked('z-show-wg'));
       setHeader(responseHeaders, 'show-ping', checked('z-show-ping'));
