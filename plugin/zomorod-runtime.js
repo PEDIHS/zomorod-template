@@ -28,11 +28,24 @@
 
   const header = (headers, name) => headers[`${PREFIX}${name}`] ?? '';
 
+  const decodeUtf8Base64 = (value) => {
+    if (!value) return '';
+    try {
+      const binary = atob(value);
+      const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      return new TextDecoder().decode(bytes);
+    } catch {
+      return '';
+    }
+  };
+
   const parseConfig = (raw) => {
     const headers = normalizeHeaders(raw?.headers);
+    const encodedStoreName = header(headers, 'store-name-b64').trim();
+    const legacyStoreName = header(headers, 'store-name').trim();
     return {
       enabled: bool(header(headers, 'enabled'), DEFAULTS.enabled),
-      storeName: header(headers, 'store-name').trim() || DEFAULTS.storeName,
+      storeName: decodeUtf8Base64(encodedStoreName) || legacyStoreName || DEFAULTS.storeName,
       showConfigs: bool(header(headers, 'show-configs'), DEFAULTS.showConfigs),
       showWireGuard: bool(header(headers, 'show-wireguard'), DEFAULTS.showWireGuard),
       showPing: bool(header(headers, 'show-ping'), DEFAULTS.showPing),
@@ -90,6 +103,16 @@
       const start = hour * 60 + minute;
       const diff = (nowMinutes - start + 1440) % 1440;
       return diff >= 0 && diff < config.announcementDuration;
+    });
+  };
+
+  const setWireGuardRowsVisible = (visible) => {
+    document.querySelectorAll('.treasury-server-row').forEach((row) => {
+      if (!(row instanceof HTMLElement)) return;
+      const protocol = row.querySelector('.treasury-config-protocol')?.textContent?.trim().toUpperCase();
+      if (protocol !== 'WG' && protocol !== 'WIREGUARD') return;
+      row.dataset.zomorodOriginalDisplay ||= row.style.display || '';
+      row.style.display = visible ? row.dataset.zomorodOriginalDisplay : 'none';
     });
   };
 
@@ -161,6 +184,7 @@
     setVisible('.treasury-quick-action', config.showConfigs);
     setVisible('.treasury-server-ping', config.showPing);
     setVisible('.treasury-notice:not(#zomorod-wireguard-card)', announcementIsActive(config));
+    setWireGuardRowsVisible(config.showWireGuard);
 
     document.querySelectorAll('.treasury-section-title').forEach((title) => {
       const text = title.textContent || '';
