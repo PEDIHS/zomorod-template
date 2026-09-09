@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="1440" viewBox="0 0 720 1440">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#061d17"/><stop offset="1" stop-color="#0b3026"/></linearGradient>
+    <linearGradient id="hero" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0b6b50"/><stop offset="0.65" stop-color="#064d3d"/><stop offset="1" stop-color="#7a5b16"/></linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#d6b45c"/><stop offset="1" stop-color="#9d731a"/></linearGradient>
+    <filter id="shadow"><feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#000" flood-opacity=".28"/></filter>
+  </defs>
+  <rect width="720" height="1440" fill="#eff4f1"/>
+  <rect x="26" y="24" width="668" height="1392" rx="42" fill="#fff" stroke="#dfe9e4"/>
+  <rect x="26" y="24" width="668" height="116" rx="42" fill="url(#bg)"/>
+  <rect x="26" y="92" width="668" height="48" fill="url(#bg)"/>
+  <circle cx="82" cy="80" r="24" fill="#0f7558" stroke="#d4b75c" stroke-width="2"/>
+  <path d="M72 80l8 8 14-17" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="132" y="88" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#fff">زمرد</text>
+  <rect x="538" y="58" width="54" height="42" rx="14" fill="#ffffff12" stroke="#ffffff22"/><text x="565" y="86" text-anchor="middle" font-family="Arial" font-size="18" fill="#fff">FA</text>
+  <rect x="602" y="58" width="54" height="42" rx="14" fill="#ffffff12" stroke="#ffffff22"/><circle cx="629" cy="79" r="10" fill="none" stroke="#fff" stroke-width="2"/>
+
+  <text x="646" y="187" text-anchor="end" font-family="Arial, sans-serif" font-size="16" fill="#0b7557">◆ فضای امن شما</text>
+  <text x="646" y="226" text-anchor="end" font-family="Arial, sans-serif" font-size="32" font-weight="800" fill="#17211d">اشتراک من</text>
+  <circle cx="630" cy="258" r="5" fill="#10b981"/><text x="615" y="264" text-anchor="end" font-family="Arial" font-size="16" fill="#61706a">pedram</text>
+
+  <rect x="58" y="300" width="604" height="286" rx="30" fill="url(#hero)" filter="url(#shadow)"/>
+  <circle cx="132" cy="374" r="38" fill="#ffffff15" stroke="#ffffff35"/><path d="M118 375l11 12 20-28" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round"/>
+  <text x="610" y="361" text-anchor="end" font-family="Arial" font-size="20" font-weight="700" fill="#dff8ee">متصل و فعال</text>
+  <text x="610" y="397" text-anchor="end" font-family="Arial" font-size="17" fill="#d8ebe5">اتصال امن شما آماده استفاده است</text>
+  <rect x="462" y="430" width="148" height="50" rx="16" fill="url(#gold)"/><text x="536" y="461" text-anchor="middle" font-family="Arial" font-size="16" font-weight="700" fill="#fff">اتصال سریع</text>
+  <circle cx="199" cy="486" r="76" fill="none" stroke="#ffffff2c" stroke-width="14"/><path d="M199 410a76 76 0 1 1-66 114" fill="none" stroke="#d7b65c" stroke-width="14" stroke-linecap="round"/>
+  <text x="199" y="482" text-anchor="middle" font-family="Arial" font-size="34" font-weight="800" fill="#fff">64%</text><text x="199" y="510" text-anchor="middle" font-family="Arial" font-size="14" fill="#dbece7">مصرف‌شده</text>
+
+  <g font-family="Arial">
+    <rect x="58" y="614" width="604" height="112" rx="24" fill="#f8fbf9" stroke="#dbe8e1"/>
+    <text x="602" y="650" text-anchor="end" font-size="14" fill="#74827c">حجم کل</text><text x="602" y="683" text-anchor="end" font-size="22" font-weight="700" fill="#18221e">100 GB</text>
+    <text x="360" y="650" text-anchor="middle" font-size="14" fill="#74827c">مصرف‌شده</text><text x="360" y="683" text-anchor="middle" font-size="22" font-weight="700" fill="#18221e">64 GB</text>
+    <text x="118" y="650" text-anchor="start" font-size="14" fill="#74827c">باقی‌مانده</text><text x="118" y="683" font-size="22" font-weight="700" fill="#07875f">36 GB</text>
+  </g>
+
+  <rect x="58" y="748" width="604" height="170" rx="26" fill="#f8fbf9" stroke="#dbe8e1"/>
+  <text x="610" y="787" text-anchor="end" font-family="Arial" font-size="19" font-weight="700" fill="#18221e">حجم باقی‌مانده</text>
+  <rect x="92" y="824" width="536" height="42" rx="21" fill="#dfe9e4"/><rect x="92" y="824" width="193" height="42" rx="21" fill="#0a845e"/>
+  <text x="360" y="853" text-anchor="middle" font-family="Arial" font-size="17" font-weight="700" fill="#fff">36%</text>
+  <text x="610" y="895" text-anchor="end" font-family="Arial" font-size="15" fill="#67756f">36 GB باقی مانده</text>
+
+  <rect x="58" y="940" width="604" height="126" rx="24" fill="#fffaf0" stroke="#eadfb9"/>
+  <circle cx="108" cy="1003" r="24" fill="#f1e3ae"/><text x="108" y="1012" text-anchor="middle" font-family="Arial" font-size="22">!</text>
+  <text x="610" y="984" text-anchor="end" font-family="Arial" font-size="18" font-weight="700" fill="#2b2d28">اعلان</text>
+  <text x="610" y="1017" text-anchor="end" font-family="Arial" font-size="15" fill="#6b6d65">سرویس شما آماده استفاده است</text>
+
+  <text x="610" y="1113" text-anchor="end" font-family="Arial" font-size="23" font-weight="800" fill="#17211d">کانفیگ‌ها</text>
+  <rect x="58" y="1134" width="604" height="96" rx="22" fill="#f8fbf9" stroke="#dbe8e1"/>
+  <rect x="82" y="1154" width="52" height="52" rx="16" fill="#e4f3ec"/><text x="108" y="1187" text-anchor="middle" font-family="Arial" font-size="15" font-weight="700" fill="#0a7557">WG</text>
+  <text x="610" y="1174" text-anchor="end" font-family="Arial" font-size="17" font-weight="700" fill="#19231f">WireGuard Germany</text><text x="610" y="1201" text-anchor="end" font-family="Arial" font-size="14" fill="#71807a">آماده اتصال امن</text>
+  <rect x="58" y="1244" width="604" height="96" rx="22" fill="#f8fbf9" stroke="#dbe8e1"/>
+  <rect x="82" y="1264" width="52" height="52" rx="16" fill="#e4f3ec"/><text x="108" y="1297" text-anchor="middle" font-family="Arial" font-size="14" font-weight="700" fill="#0a7557">VLS</text>
+  <text x="610" y="1284" text-anchor="end" font-family="Arial" font-size="17" font-weight="700" fill="#19231f">VLESS Netherlands</text><text x="610" y="1311" text-anchor="end" font-family="Arial" font-size="14" fill="#71807a">آماده اتصال امن</text>
+  <text x="360" y="1380" text-anchor="middle" font-family="Arial" font-size="13" fill="#87938e">Zomorod Template · Emerald + Gold</text>
+</svg>
