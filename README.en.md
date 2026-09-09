@@ -13,7 +13,7 @@
   <a href="docs/ARCHITECTURE.md">Architecture</a>
 </p>
 
-Zomorod is more than a replacement `index.html`. The **Special** edition combines a responsive PasarGuard subscription page with a dedicated settings control plane exposed as **Zomorod Template · Special** inside the PasarGuard dashboard.
+Zomorod is more than a replacement `index.html`. The **Special** edition combines a responsive PasarGuard subscription page with a dedicated settings control plane exposed as a real **Zomorod Template · Special** tab in the PasarGuard Settings tab bar.
 
 <p align="center">
   <img src="screenshots/en.png" alt="Zomorod subscription page" width="72%">
@@ -25,8 +25,8 @@ Zomorod is more than a replacement `index.html`. The **Special** edition combine
 - Persian-first UI with English, Russian and Chinese support
 - Responsive subscription page, QR codes, usage analytics and application recommendations
 - Standard and WireGuard configuration controls
-- Native `.conf` download through PasarGuard's WireGuard endpoint
-- Store-name customization
+- Standard `.conf` download through PasarGuard's native WireGuard endpoint
+- UTF-8 store-name customization
 - Toggle for normal configurations, WireGuard, application list and estimated ping display
 - Announcement controls with multiple daily time windows
 - Native synchronization with PasarGuard subscription settings
@@ -95,7 +95,7 @@ Zomorod-specific values use a namespaced set of entries inside `subscription.res
 
 ```text
 x-zomorod-enabled
-x-zomorod-store-name
+x-zomorod-store-name-b64
 x-zomorod-show-configs
 x-zomorod-show-wireguard
 x-zomorod-show-ping
@@ -106,11 +106,13 @@ x-zomorod-announcement-times
 x-zomorod-announcement-duration
 ```
 
+The shop name is encoded as UTF-8 Base64 so the HTTP header remains compatible with PasarGuard's Latin-1 header validation. The subscription runtime decodes it in the browser.
+
 This lets the settings travel with the PasarGuard database and its normal backup process instead of introducing another persistence layer.
 
 ## Update resilience
 
-Zomorod intentionally avoids permanently patching PasarGuard's Python or React source tree. The owned integration payload stays in `/opt/zomorod`; a systemd watcher and timer reapply the tiny loader when the generated dashboard is rebuilt.
+Zomorod intentionally avoids permanently patching PasarGuard's Python or React source tree. The owned integration payload stays in `/opt/zomorod`; a systemd watcher and timer reapply the tiny loader when the generated dashboard is rebuilt. Health checks are idempotent and rewrite files only when the integration payload actually changed or disappeared.
 
 ### Important compatibility boundary
 
@@ -121,6 +123,8 @@ The project therefore does not claim guaranteed compatibility with arbitrary fut
 ## WireGuard
 
 The dedicated Zomorod WireGuard action requests the native PasarGuard manual subscription endpoint for `wireguard` and downloads the returned content as a `.conf` file. PasarGuard remains responsible for protocol availability, account status, permissions and HWID enforcement.
+
+Turning off WireGuard display in Zomorod hides both the dedicated WireGuard download card and WG rows in the normal configuration list.
 
 ## Scheduled announcements
 
