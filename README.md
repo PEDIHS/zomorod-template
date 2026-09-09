@@ -28,9 +28,9 @@
 تصاویر زیر از اجرای واقعی تمپلیت زمرد گرفته شده‌اند و برای مستندات GitHub فقط Browser Chrome و آدرس پنل از آن‌ها حذف شده است.
 
 <p align="center">
-  <img src="screenshots/light-dashboard.webp" alt="Zomorod light dashboard" width="44%">
+  <img src="screenshots/light-dashboard.webp" alt="Light subscription overview" width="44%">
   &nbsp;&nbsp;
-  <img src="screenshots/dark-dashboard.webp" alt="Zomorod dark dashboard" width="44%">
+  <img src="screenshots/dark-dashboard.webp" alt="Dark subscription overview" width="44%">
 </p>
 
 <p align="center"><sub>داشبورد اصلی در حالت روشن و تاریک</sub></p>
