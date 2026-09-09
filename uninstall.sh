@@ -15,7 +15,10 @@ if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload
 fi
 
-find "${PASARGUARD_ROOT}" -maxdepth 5 -type f -path '*/dashboard/build/index.html' -o -path '*/dashboard/build/404.html' 2>/dev/null | while read -r html; do
+find "${PASARGUARD_ROOT}" -maxdepth 5 -type f \( \
+  -path '*/dashboard/build/index.html' -o \
+  -path '*/dashboard/build/404.html' \
+\) -print 2>/dev/null | while read -r html; do
   python3 - "${html}" <<'PY'
 from pathlib import Path
 import re
