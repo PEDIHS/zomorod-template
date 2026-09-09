@@ -3,11 +3,11 @@
 
   const PREFIX = 'x-zomorod-';
   const DEFAULTS = {
-    enabled: true,
+    enabled: false,
     storeName: 'زمرد',
     showConfigs: true,
     showWireGuard: true,
-    showPing: false,
+    showPing: true,
     showApps: true,
     showAnnouncement: true,
     announcementMode: 'always',
@@ -16,6 +16,7 @@
   };
 
   const state = { config: { ...DEFAULTS }, raw: null };
+  let applyQueued = false;
 
   const bool = (value, fallback) => {
     if (value == null || value === '') return fallback;
@@ -32,8 +33,7 @@
     if (!value) return '';
     try {
       const binary = atob(value);
-      const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-      return new TextDecoder().decode(bytes);
+      return new TextDecoder().decode(Uint8Array.from(binary, (c) => c.charCodeAt(0)));
     } catch {
       return '';
     }
@@ -41,11 +41,9 @@
 
   const parseConfig = (raw) => {
     const headers = normalizeHeaders(raw?.headers);
-    const encodedStoreName = header(headers, 'store-name-b64').trim();
-    const legacyStoreName = header(headers, 'store-name').trim();
     return {
       enabled: bool(header(headers, 'enabled'), DEFAULTS.enabled),
-      storeName: decodeUtf8Base64(encodedStoreName) || legacyStoreName || DEFAULTS.storeName,
+      storeName: decodeUtf8Base64(header(headers, 'store-name-b64').trim()) || header(headers, 'store-name').trim() || DEFAULTS.storeName,
       showConfigs: bool(header(headers, 'show-configs'), DEFAULTS.showConfigs),
       showWireGuard: bool(header(headers, 'show-wireguard'), DEFAULTS.showWireGuard),
       showPing: bool(header(headers, 'show-ping'), DEFAULTS.showPing),
@@ -59,20 +57,28 @@
 
   const basePath = () => window.location.pathname.replace(/\/+$/, '');
 
-  const fetchRaw = async () => {
-    const response = await fetch(`${window.location.origin}${basePath()}/raw`, {
-      headers: { Accept: 'application/json' },
-      cache: 'no-store',
-    });
-    if (!response.ok) throw new Error(`raw endpoint returned ${response.status}`);
-    return response.json();
-  };
+  async function fetchRaw() {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 7000);
+    try {
+      const response = await fetch(`${window.location.origin}${basePath()}/raw`, {
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`raw endpoint returned ${response.status}`);
+      return await response.json();
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
 
   const setVisible = (selector, visible) => {
     document.querySelectorAll(selector).forEach((node) => {
       if (!(node instanceof HTMLElement)) return;
-      node.dataset.zomorodOriginalDisplay ||= node.style.display || '';
-      node.style.display = visible ? node.dataset.zomorodOriginalDisplay : 'none';
+      if (!node.hasAttribute('data-zomorod-original-display')) node.setAttribute('data-zomorod-original-display', node.style.display || '');
+      const target = visible ? (node.getAttribute('data-zomorod-original-display') || '') : 'none';
+      if (node.style.display !== target) node.style.display = target;
     });
   };
 
@@ -80,29 +86,26 @@
     document.querySelectorAll('.treasury-brand').forEach((brand) => {
       const spans = brand.querySelectorAll(':scope > span');
       const label = spans[spans.length - 1];
-      if (label) label.textContent = name;
-      brand.setAttribute('aria-label', name);
+      if (label && label.textContent !== name) label.textContent = name;
+      if (brand.getAttribute('aria-label') !== name) brand.setAttribute('aria-label', name);
     });
-    if (document.title && !document.title.includes(name)) document.title = `${name} · Zomorod`;
   };
 
   const announcementIsActive = (config) => {
     if (!config.showAnnouncement) return false;
     if (config.announcementMode !== 'scheduled') return true;
-
     const times = String(config.announcementTimes || '')
       .split(',')
       .map((value) => value.trim())
       .filter((value) => /^([01]\d|2[0-3]):[0-5]\d$/.test(value));
     if (!times.length) return false;
-
     const now = new Date();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
     return times.some((time) => {
       const [hour, minute] = time.split(':').map(Number);
       const start = hour * 60 + minute;
       const diff = (nowMinutes - start + 1440) % 1440;
-      return diff >= 0 && diff < config.announcementDuration;
+      return diff < config.announcementDuration;
     });
   };
 
@@ -111,8 +114,9 @@
       if (!(row instanceof HTMLElement)) return;
       const protocol = row.querySelector('.treasury-config-protocol')?.textContent?.trim().toUpperCase();
       if (protocol !== 'WG' && protocol !== 'WIREGUARD') return;
-      row.dataset.zomorodOriginalDisplay ||= row.style.display || '';
-      row.style.display = visible ? row.dataset.zomorodOriginalDisplay : 'none';
+      if (!row.hasAttribute('data-zomorod-original-display')) row.setAttribute('data-zomorod-original-display', row.style.display || '');
+      const target = visible ? (row.getAttribute('data-zomorod-original-display') || '') : 'none';
+      if (row.style.display !== target) row.style.display = target;
     });
   };
 
@@ -123,7 +127,6 @@
       return;
     }
     if (existing) return;
-
     const anchor = document.querySelector('.treasury-links-section') || document.querySelector('.treasury-content-stack');
     if (!anchor || !(anchor.parentElement instanceof HTMLElement)) return;
 
@@ -131,26 +134,16 @@
     section.id = 'zomorod-wireguard-card';
     section.className = 'treasury-notice animate-fadeIn';
     section.style.marginTop = '1rem';
-    section.innerHTML = `
-      <div class="treasury-notice-icon" aria-hidden="true">WG</div>
-      <div class="min-w-0 flex-1">
-        <h2>WireGuard</h2>
-        <p>دانلود مستقیم فایل استاندارد WireGuard از خود PasarGuard</p>
-      </div>
-      <button type="button" class="ios-primary-button" data-zomorod-wg-download>دانلود .conf</button>
-    `;
-
+    section.innerHTML = '<div class="treasury-notice-icon" aria-hidden="true">WG</div><div class="min-w-0 flex-1"><h2>WireGuard</h2><p>دانلود مستقیم فایل استاندارد WireGuard از PasarGuard</p></div><button type="button" class="ios-primary-button" data-zomorod-wg-download>دانلود .conf</button>';
     anchor.insertAdjacentElement('afterend', section);
+
     const button = section.querySelector('[data-zomorod-wg-download]');
     button?.addEventListener('click', async () => {
       const original = button.textContent;
       button.disabled = true;
-      button.textContent = 'در حال دریافت…';
+      if (button.textContent !== 'در حال دریافت…') button.textContent = 'در حال دریافت…';
       try {
-        const response = await fetch(`${window.location.origin}${basePath()}/wireguard`, {
-          headers: { Accept: 'text/plain,*/*' },
-          cache: 'no-store',
-        });
+        const response = await fetch(`${window.location.origin}${basePath()}/wireguard`, { headers: { Accept: 'text/plain,*/*' }, cache: 'no-store' });
         if (!response.ok) throw new Error(`WireGuard HTTP ${response.status}`);
         const content = await response.text();
         const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
@@ -170,14 +163,28 @@
         setTimeout(() => {
           button.disabled = false;
           button.textContent = original;
-        }, 2200);
+        }, 1800);
       }
     });
   };
 
+  const restoreOriginalUi = () => {
+    document.querySelectorAll('[data-zomorod-original-display]').forEach((node) => {
+      if (!(node instanceof HTMLElement)) return;
+      node.style.display = node.getAttribute('data-zomorod-original-display') || '';
+      node.removeAttribute('data-zomorod-original-display');
+    });
+    document.getElementById('zomorod-wireguard-card')?.remove();
+    document.documentElement.removeAttribute('data-zomorod');
+  };
+
   const apply = () => {
+    applyQueued = false;
     const config = state.config;
-    if (!config.enabled) return;
+    if (!config.enabled) {
+      restoreOriginalUi();
+      return;
+    }
 
     updateBrand(config.storeName);
     setVisible('.treasury-links-section', config.showConfigs);
@@ -189,12 +196,24 @@
     document.querySelectorAll('.treasury-section-title').forEach((title) => {
       const text = title.textContent || '';
       if (!/اپلیکیشن|application/i.test(text)) return;
-      if (title instanceof HTMLElement) title.style.display = config.showApps ? '' : 'none';
-      if (title.nextElementSibling instanceof HTMLElement) title.nextElementSibling.style.display = config.showApps ? '' : 'none';
+      if (title instanceof HTMLElement) {
+        const target = config.showApps ? '' : 'none';
+        if (title.style.display !== target) title.style.display = target;
+      }
+      if (title.nextElementSibling instanceof HTMLElement) {
+        const target = config.showApps ? '' : 'none';
+        if (title.nextElementSibling.style.display !== target) title.nextElementSibling.style.display = target;
+      }
     });
 
     ensureWireGuardCard(config);
-    document.documentElement.dataset.zomorod = 'active';
+    if (document.documentElement.getAttribute('data-zomorod') !== 'active') document.documentElement.setAttribute('data-zomorod', 'active');
+  };
+
+  const scheduleApply = () => {
+    if (applyQueued) return;
+    applyQueued = true;
+    requestAnimationFrame(apply);
   };
 
   const start = async () => {
@@ -202,18 +221,16 @@
       state.raw = await fetchRaw();
       state.config = parseConfig(state.raw);
     } catch (error) {
-      console.warn('[Zomorod] Could not read runtime settings; defaults are active.', error);
+      console.warn('[Zomorod] runtime settings unavailable; original template remains untouched.', error);
+      state.config = { ...DEFAULTS, enabled: false };
     }
 
     apply();
-    const observer = new MutationObserver(() => apply());
+    const observer = new MutationObserver(scheduleApply);
     observer.observe(document.documentElement, { subtree: true, childList: true });
-    window.setInterval(apply, 30000);
+    window.setInterval(scheduleApply, 30000);
   };
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', start, { once: true });
-  } else {
-    start();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+  else start();
 })();
