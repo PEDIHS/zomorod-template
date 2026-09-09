@@ -10,7 +10,7 @@ Zomorod Special باید سه ویژگی را هم‌زمان داشته باش�
 2. تنظیمات اصلی با PasarGuard دو نسخه متفاوت نداشته باشند.
 3. آپدیت عادی PasarGuard فایل‌های اصلی افزونه و تنظیمات زمرد را حذف نکند.
 
-برای رسیدن به این هدف، پروژه از یک معماری دو لایه استفاده می‌کند.
+برای رسیدن به این هدف، پروژه از معماری دو لایه استفاده می‌کند.
 
 ```text
 ┌───────────────────────────────────────────────────────────┐
@@ -48,7 +48,7 @@ CUSTOM_TEMPLATES_DIRECTORY="/var/lib/pasarguard/templates/"
 SUBSCRIPTION_PAGE_TEMPLATE="subscription/index.html"
 ```
 
-Runtime زمرد (`plugin/zomorod-runtime.js`) در زمان Integration داخل HTML نهایی قرار می‌گیرد تا به فایل Static جدا و Route اضافی در endpoint عمومی Subscription وابسته نباشد.
+Runtime زمرد (`plugin/zomorod-runtime.js`) در زمان Integration داخل HTML نهایی قرار می‌گیرد تا به Route استاتیک جدا در endpoint عمومی Subscription وابسته نباشد.
 
 ### دریافت تنظیمات Runtime
 
@@ -66,7 +66,7 @@ x-zomorod-
 
 این روش دو مزیت دارد:
 
-- هیچ endpoint عمومی اختصاصی برای تنظیمات زمرد لازم نیست.
+- endpoint عمومی اختصاصی برای تنظیمات زمرد لازم نیست.
 - تنظیمات در همان Database و Backup پاسارگارد باقی می‌مانند.
 
 ## لایه ۲: Zomorod Special Admin Control
@@ -82,7 +82,7 @@ plugin/zomorod-special.js
 1. از Token موجود Dashboard استفاده می‌کند.
 2. `GET /api/settings` را اجرا می‌کند.
 3. تنظیمات native و Zomorod را در UI یکپارچه نمایش می‌دهد.
-4. در Save، همان object را با `PUT /api/settings` برمی‌گرداند.
+4. در Save، همان Settings object را با `PUT /api/settings` برمی‌گرداند.
 
 ### Native fields
 
@@ -105,7 +105,7 @@ Zomorod برای آن‌ها Shadow Copy ایجاد نمی‌کند.
 
 ```text
 x-zomorod-enabled
-x-zomorod-store-name
+x-zomorod-store-name-b64
 x-zomorod-show-configs
 x-zomorod-show-wireguard
 x-zomorod-show-ping
@@ -116,16 +116,34 @@ x-zomorod-announcement-times
 x-zomorod-announcement-duration
 ```
 
+### چرا نام فروشگاه Base64 است؟
+
+PasarGuard قبل از ساخت HTTP Response، نام و مقدار Headerها را برای Latin-1 معتبر می‌کند. نامی مثل `زمرد` یا یک Emoji مستقیماً در Header قابل ذخیره نیست و می‌تواند Response را نامعتبر کند.
+
+بنابراین Zomorod نام فروشگاه را به UTF-8 bytes تبدیل و سپس Base64 می‌کند:
+
+```text
+shop name UTF-8
+      │
+      ▼
+Base64 ASCII
+      │
+      ▼
+x-zomorod-store-name-b64
+```
+
+Runtime در مرورگر Base64 را decode می‌کند. بقیه مقادیر `x-zomorod-*` فقط Boolean، زمان و عدد هستند و ذاتاً ASCII باقی می‌مانند.
+
 ## چرا افزونه سورس اصلی PasarGuard را Fork نمی‌کند؟
 
-Patch کردن فایل‌های زیر در نصب کاربر، هزینه نگهداری بالایی ایجاد می‌کند:
+Patch کردن فایل‌های زیر در نصب کاربر هزینه نگهداری بالایی ایجاد می‌کند:
 
 ```text
 app/*
 dashboard/src/*
 ```
 
-چون هر `git pull`، upgrade package یا rebuild می‌تواند Patch را overwrite کند یا Conflict بسازد.
+چون هر Upgrade یا rebuild می‌تواند Patch را overwrite کند یا Conflict بسازد.
 
 در عوض، Zomorod فایل‌های مالک خودش را اینجا نگه می‌دارد:
 
@@ -134,6 +152,16 @@ dashboard/src/*
 ```
 
 و فقط به Build تولیدشده Dashboard یک Loader کوچک اضافه می‌کند.
+
+## تب واقعی Settings
+
+PasarGuard تب‌های Settings را داخل یک نوار افقی Render می‌کند. Zomorod Loader همان Tab Bar را در DOM پیدا کرده و دکمه زیر را به انتهای آن اضافه می‌کند:
+
+```text
+◆ زمرد تمپلیت  Special
+```
+
+کلیک روی این Tab، Control Plane زمرد را در همان Origin باز می‌کند. Route رسمی upstream اضافه نمی‌شود، چون PasarGuard در نسخه هدف API رسمی برای Register کردن third-party route/tab ندارد.
 
 ## Self-healing integration
 
@@ -148,8 +176,9 @@ dashboard/src/*
 - وجود Runtime زمرد را در Subscription Template تضمین می‌کند.
 - `zomorod-special.js` را داخل statics تولیدشده Dashboard کپی می‌کند.
 - Loader را فقط در صورت نبودن به `index.html` و `404.html` اضافه می‌کند.
+- Subscription Template یا فایل JS را فقط وقتی تغییر واقعی وجود داشته باشد دوباره می‌نویسد.
 
-برای اجرا بعد از Upgrade دو مکانیزم وجود دارد:
+برای اجرا بعد از Upgrade دو مکانیزم وجود دارد.
 
 ### Path watcher
 
@@ -169,11 +198,11 @@ zomorod-integrator.timer
 
 ## چرا این یک Plugin API واقعی PasarGuard نیست؟
 
-در نسخه‌ای که Zomorod بر اساس آن طراحی شده، PasarGuard API رسمی برای Register کردن third-party Dashboard route/tab ندارد. بنابراین Loader زمرد یک compatibility layer است، نه API رسمی Plugin upstream.
+در نسخه‌ای که Zomorod بر اساس آن طراحی شده، PasarGuard API رسمی برای Register کردن third-party Dashboard route/tab ندارد. بنابراین Loader زمرد یک compatibility layer است، نه Plugin API رسمی upstream.
 
 این تمایز مهم است:
 
-- **داده و تنظیمات:** پایدار و مبتنی بر API/DB خود PasarGuard.
+- **داده و تنظیمات:** مبتنی بر API/DB خود PasarGuard.
 - **نمایش Tab در Dashboard:** self-healing integration روی Build تولیدشده.
 
 اگر PasarGuard در آینده Plugin API رسمی ارائه کند، مسیر مطلوب Zomorod مهاجرت Admin Control به همان API خواهد بود و namespace تنظیمات فعلی می‌تواند بدون Migration مخرب حفظ شود.
@@ -195,6 +224,8 @@ PasarGuard
 ```
 
 Zomorod WireGuard را خودش Generate نمی‌کند؛ در بخش Special از قابلیت native PasarGuard استفاده می‌کند.
+
+Toggle نمایش WireGuard در Runtime هم کارت دانلود اختصاصی و هم ردیف‌های پروتکل `WG` در لیست کانفیگ‌ها را کنترل می‌کند. `manual_sub_request.wireguard` همچنان Switch اصلی native در PasarGuard است.
 
 ## Announcement scheduling
 
@@ -235,6 +266,7 @@ Zomorod Special به این رفتارهای upstream متکی است:
 4. `/{token}/raw` Response Headerها را ارائه دهد.
 5. Manual `wireguard` endpoint وجود داشته باشد.
 6. Dashboard یک HTML build قابل سرو داشته باشد.
+7. نوار Settings در DOM قابل تشخیص باقی بماند.
 
 تغییر breaking در موارد بالا باید با Release جدید Zomorod پاسخ داده شود.
 
@@ -261,7 +293,5 @@ Backupهای Installer:
 ```
 
 ## اصل طراحی
-
-قاعده اصلی Zomorod این است:
 
 > هر چیزی که PasarGuard خودش مالک آن است، در PasarGuard ذخیره و اعتبارسنجی شود؛ هر چیزی که فقط مربوط به ظاهر و رفتار Zomorod است، namespaced و قابل حذف باقی بماند.
