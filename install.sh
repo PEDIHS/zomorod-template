@@ -1,270 +1,208 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 LANG_CODE="fa"
 VERSION="latest"
-DEST_DIR="/var/lib/pasarguard/templates/subscription"
-DEST_FILE="${DEST_DIR}/index.html"
-ENV_FILE="/opt/pasarguard/.env"
-TEMP_DIR=""
-STAGED_FILE=""
-ROLLBACK_FILE=""
-
-# تنظیمات ریپازیتوری شخصی شما
 REPO_OWNER="PEDIHS"
-REPO_NAME="subscription-template"
-PREBUILT_REF="7bdd78a4e14f62ba06d50ed2d12f6b18d9c4e43f"
-
-cleanup() {
-  [[ -n "${STAGED_FILE}" && -f "${STAGED_FILE}" ]] && rm -f "${STAGED_FILE}"
-  [[ -n "${ROLLBACK_FILE}" && -f "${ROLLBACK_FILE}" ]] && rm -f "${ROLLBACK_FILE}"
-  [[ -n "${TEMP_DIR}" && -d "${TEMP_DIR}" ]] && rm -rf "${TEMP_DIR}"
-}
-
-trap cleanup EXIT
+REPO_NAME="zomorod-template"
+PASARGUARD_ROOT="/opt/pasarguard"
+ZOMOROD_ROOT="/opt/zomorod"
+TEMPLATE_DIR="/var/lib/pasarguard/templates/subscription"
+TEMPLATE_FILE="${TEMPLATE_DIR}/index.html"
+ENV_FILE="${PASARGUARD_ROOT}/.env"
+TMP_DIR=""
+BACKUP_DIR=""
+SOURCE_REF="main"
 
 usage() {
   cat <<'EOF'
-Usage: install.sh [--lang en|fa|zh|ru] [--version latest|<tag>]
+Zomorod Template + Special Plugin installer for PasarGuard
+
+Usage:
+  install.sh [--lang fa|en|ru|zh] [--version latest|<tag>]
 
 Examples:
   install.sh
-  install.sh --lang en
-  install.sh --lang fa --version v2.0.0
+  install.sh --lang fa
+  install.sh --version v4.0.0
 EOF
 }
+
+log() { printf '\033[1;32m[Zomorod]\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m[Zomorod]\033[0m %s\n' "$*" >&2; }
+fail() { printf '\033[1;31m[Zomorod]\033[0m %s\n' "$*" >&2; exit 1; }
+
+cleanup() {
+  [[ -n "${TMP_DIR}" && -d "${TMP_DIR}" ]] && rm -rf "${TMP_DIR}"
+}
+trap cleanup EXIT
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --lang)
-      if [[ $# -lt 2 ]]; then
-        echo "Error: --lang needs a value (en|fa|zh|ru)." >&2
-        exit 1
-      fi
-      LANG_CODE="$2"
-      shift 2
-      ;;
+      [[ $# -ge 2 ]] || fail "--lang needs a value"
+      LANG_CODE="$2"; shift 2 ;;
     --version)
-      if [[ $# -lt 2 ]]; then
-        echo "Error: --version needs a value (latest|<tag>)." >&2
-        exit 1
-      fi
-      VERSION="$2"
-      shift 2
-      ;;
+      [[ $# -ge 2 ]] || fail "--version needs a value"
+      VERSION="$2"; shift 2 ;;
     -h|--help)
-      usage
-      exit 0
-      ;;
+      usage; exit 0 ;;
     *)
-      echo "Error: unknown argument: $1" >&2
-      usage
-      exit 1
-      ;;
+      fail "unknown argument: $1" ;;
   esac
 done
 
-case "${LANG_CODE}" in
-  en|fa|zh|ru) ;;
-  *)
-    echo "Error: invalid language '${LANG_CODE}'. Use one of: en, fa, zh, ru." >&2
-    exit 1
-    ;;
-esac
+case "${LANG_CODE}" in fa|en|ru|zh) ;; *) fail "invalid language: ${LANG_CODE}" ;; esac
+[[ ${EUID} -eq 0 ]] || fail "run with sudo/root"
+[[ -d "${PASARGUARD_ROOT}" ]] || fail "PasarGuard was not found in ${PASARGUARD_ROOT}"
+command -v python3 >/dev/null 2>&1 || fail "python3 is required"
 
-if [[ "${EUID}" -ne 0 ]]; then
-  echo "Error: run this installer with sudo." >&2
-  exit 1
-fi
-
-if [[ -z "${VERSION}" ]]; then
-  echo "Error: version cannot be empty. Use 'latest' or a release tag like 'v2.0.0'." >&2
-  exit 1
-fi
-
-RELEASE_PATH="latest/download"
 if [[ "${VERSION}" != "latest" ]]; then
-  RELEASE_PATH="download/${VERSION}"
+  SOURCE_REF="${VERSION}"
 fi
 
-# تغییر آدرس به ریپازیتوری شخصی
-URL="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/${RELEASE_PATH}/${LANG_CODE}.html"
-if [[ "${LANG_CODE}" == "fa" ]]; then
-  URL="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/${RELEASE_PATH}/index.html"
+TMP_DIR="$(mktemp -d)"
+BACKUP_DIR="${ZOMOROD_ROOT}/backups/$(date +%Y%m%d-%H%M%S)"
+mkdir -p "${BACKUP_DIR}" "${ZOMOROD_ROOT}/plugin" "${TEMPLATE_DIR}"
+
+if command -v curl >/dev/null 2>&1; then
+  download() { curl -fsSL --connect-timeout 20 --retry 3 --retry-delay 2 "$1" -o "$2"; }
+elif command -v wget >/dev/null 2>&1; then
+  download() { wget -q --timeout=20 --tries=3 "$1" -O "$2"; }
+else
+  fail "curl or wget is required"
 fi
 
-RAW_PREBUILT_BASE="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${PREBUILT_REF}/prebuilt"
-
-mkdir -p "${DEST_DIR}"
-TEMP_DIR="$(mktemp -d)"
-STAGED_FILE="$(mktemp "${DEST_DIR}/.subscription-template.XXXXXX")"
-
-download_file() {
-  local source_url="$1"
-  local target_file="$2"
-
-  if command -v wget >/dev/null 2>&1; then
-    wget -q --timeout=25 --tries=3 -O "${target_file}" "${source_url}"
-  elif command -v curl >/dev/null 2>&1; then
-    curl -fsSL --connect-timeout 25 --retry 3 --retry-delay 2 "${source_url}" -o "${target_file}"
-  else
-    return 127
-  fi
+raw_url() {
+  printf 'https://raw.githubusercontent.com/%s/%s/%s/%s' "${REPO_OWNER}" "${REPO_NAME}" "${SOURCE_REF}" "$1"
 }
 
-download_prebuilt_fallback() {
-  local archive="${TEMP_DIR}/index.html.gz"
-  local manifest="${TEMP_DIR}/index.parts"
-  local part_file=""
-  local part=""
-  local part_count=""
-  local part_index=0
+backup_existing() {
+  [[ -f "${TEMPLATE_FILE}" ]] && cp -a "${TEMPLATE_FILE}" "${BACKUP_DIR}/subscription-index.html"
+  [[ -f "${ENV_FILE}" ]] && cp -a "${ENV_FILE}" "${BACKUP_DIR}/pasarguard.env"
+}
 
-  if ! command -v gzip >/dev/null 2>&1; then
-    echo "Error: gzip is required for the prebuilt fallback." >&2
-    return 1
-  fi
+install_prebuilt_fallback() {
+  local manifest="${TMP_DIR}/index.parts"
+  local archive="${TMP_DIR}/index.html.gz"
+  local part_file part count index
 
-  if ! download_file "${RAW_PREBUILT_BASE}/index.parts" "${manifest}"; then
-    echo "Error: failed to download the prebuilt manifest." >&2
-    return 1
-  fi
-
-  read -r part_count < "${manifest}"
-  if [[ ! "${part_count}" =~ ^[1-9][0-9]?$ ]]; then
-    echo "Error: invalid prebuilt manifest." >&2
-    return 1
-  fi
-
+  log "release asset unavailable; using repository prebuilt fallback"
+  download "$(raw_url prebuilt/index.parts)" "${manifest}" || return 1
+  read -r count < "${manifest}"
+  [[ "${count}" =~ ^[1-9][0-9]?$ ]] || return 1
   : > "${archive}"
-  for ((part_index = 0; part_index < part_count; part_index++)); do
-    printf -v part '%02d' "${part_index}"
-    part_file="${TEMP_DIR}/index.html.gz.part-${part}"
-    if ! download_file "${RAW_PREBUILT_BASE}/index.html.gz.part-${part}" "${part_file}"; then
-      echo "Error: failed to download prebuilt part ${part}." >&2
-      return 1
-    fi
+  for ((index=0; index<count; index++)); do
+    printf -v part '%02d' "${index}"
+    part_file="${TMP_DIR}/part-${part}"
+    download "$(raw_url prebuilt/index.html.gz.part-${part})" "${part_file}" || return 1
     cat "${part_file}" >> "${archive}"
   done
-
-  gzip -t "${archive}"
-  gzip -dc "${archive}" > "${STAGED_FILE}"
+  gzip -t "${archive}" || return 1
+  gzip -dc "${archive}" > "${TMP_DIR}/template.html"
 }
 
-if ! command -v wget >/dev/null 2>&1 && ! command -v curl >/dev/null 2>&1; then
-  echo "Error: neither wget nor curl is installed." >&2
-  exit 1
-fi
+install_template() {
+  local release_path asset url
+  release_path="latest/download"
+  [[ "${VERSION}" != "latest" ]] && release_path="download/${VERSION}"
+  asset="${LANG_CODE}.html"
+  [[ "${LANG_CODE}" == "fa" ]] && asset="index.html"
+  url="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/${release_path}/${asset}"
 
-if [[ "${VERSION}" == "latest" && "${LANG_CODE}" == "fa" ]]; then
-  echo "Downloading the current prebuilt Persian template..."
-  download_prebuilt_fallback
-elif ! download_file "${URL}" "${STAGED_FILE}"; then
-  echo "Error: release asset could not be downloaded for ${LANG_CODE} (${VERSION})." >&2
-  exit 1
-fi
+  log "downloading Zomorod subscription UI (${LANG_CODE})"
+  if ! download "${url}" "${TMP_DIR}/template.html"; then
+    [[ "${LANG_CODE}" == "fa" && "${VERSION}" == "latest" ]] || fail "release asset ${asset} was not found"
+    install_prebuilt_fallback || fail "could not download a valid prebuilt template"
+  fi
 
-if [[ ! -s "${STAGED_FILE}" ]] || ! grep -qi '<!doctype html' "${STAGED_FILE}"; then
-  echo "Error: downloaded release asset is not a valid HTML template." >&2
-  exit 1
-fi
+  grep -qi '<!doctype html' "${TMP_DIR}/template.html" || fail "downloaded template is not valid HTML"
+  [[ $(wc -c < "${TMP_DIR}/template.html") -gt 100000 ]] || fail "downloaded template is unexpectedly small"
+  install -m 0644 "${TMP_DIR}/template.html" "${TEMPLATE_FILE}"
+}
 
-if [[ "$(wc -c < "${STAGED_FILE}")" -lt 100000 ]]; then
-  echo "Error: downloaded template is unexpectedly small; installation stopped." >&2
-  exit 1
-fi
+install_plugin_files() {
+  local file
+  for file in plugin/zomorod-special.js plugin/zomorod-runtime.js plugin/integrate-dashboard.sh; do
+    download "$(raw_url "${file}")" "${TMP_DIR}/$(basename "${file}")" || fail "could not download ${file}"
+  done
 
-chmod 0644 "${STAGED_FILE}"
+  install -m 0644 "${TMP_DIR}/zomorod-special.js" "${ZOMOROD_ROOT}/plugin/zomorod-special.js"
+  install -m 0644 "${TMP_DIR}/zomorod-runtime.js" "${ZOMOROD_ROOT}/plugin/zomorod-runtime.js"
+  install -m 0755 "${TMP_DIR}/integrate-dashboard.sh" "${ZOMOROD_ROOT}/plugin/integrate-dashboard.sh"
+}
 
-if [[ -f "${DEST_FILE}" ]]; then
-  ROLLBACK_FILE="$(mktemp "${DEST_DIR}/.index.rollback.XXXXXX")"
-  cp -p "${DEST_FILE}" "${ROLLBACK_FILE}"
-fi
+configure_pasarguard() {
+  mkdir -p "$(dirname "${ENV_FILE}")"
+  touch "${ENV_FILE}"
 
-if [[ -f "${ENV_FILE}" ]]; then
-  cp -p "${ENV_FILE}" "${TEMP_DIR}/pasarguard.env"
-fi
+  python3 - "${ENV_FILE}" <<'PY'
+from pathlib import Path
+import re
+import sys
 
-mv -f "${STAGED_FILE}" "${DEST_FILE}"
-STAGED_FILE=""
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8") if path.exists() else ""
+values = {
+    "CUSTOM_TEMPLATES_DIRECTORY": '"/var/lib/pasarguard/templates/"',
+    "SUBSCRIPTION_PAGE_TEMPLATE": '"subscription/index.html"',
+}
+for key, value in values.items():
+    pattern = re.compile(rf"(?m)^\s*{re.escape(key)}\s*=.*$")
+    line = f"{key}={value}"
+    if pattern.search(text):
+        text = pattern.sub(line, text)
+    else:
+        text = text.rstrip() + "\n" + line + "\n"
+path.write_text(text, encoding="utf-8")
+PY
+}
 
-mkdir -p "$(dirname "${ENV_FILE}")"
-touch "${ENV_FILE}"
-
-if grep -q '^CUSTOM_TEMPLATES_DIRECTORY=' "${ENV_FILE}"; then
-  sed -i 's|^CUSTOM_TEMPLATES_DIRECTORY=.*|CUSTOM_TEMPLATES_DIRECTORY="/var/lib/pasarguard/templates/"|' "${ENV_FILE}"
-else
-  echo 'CUSTOM_TEMPLATES_DIRECTORY="/var/lib/pasarguard/templates/"' >> "${ENV_FILE}"
-fi
-
-if grep -q '^SUBSCRIPTION_PAGE_TEMPLATE=' "${ENV_FILE}"; then
-  sed -i 's|^SUBSCRIPTION_PAGE_TEMPLATE=.*|SUBSCRIPTION_PAGE_TEMPLATE="subscription/index.html"|' "${ENV_FILE}"
-else
-  echo 'SUBSCRIPTION_PAGE_TEMPLATE="subscription/index.html"' >> "${ENV_FILE}"
-fi
+install_systemd_units() {
+  command -v systemctl >/dev/null 2>&1 || { warn "systemd not detected; integration will run once only"; return 0; }
+  local unit
+  for unit in zomorod-integrator.service zomorod-integrator.path zomorod-integrator.timer; do
+    download "$(raw_url "systemd/${unit}")" "${TMP_DIR}/${unit}" || fail "could not download systemd/${unit}"
+    install -m 0644 "${TMP_DIR}/${unit}" "/etc/systemd/system/${unit}"
+  done
+  systemctl daemon-reload
+  systemctl enable --now zomorod-integrator.path >/dev/null 2>&1 || warn "path watcher could not be enabled"
+  systemctl enable --now zomorod-integrator.timer >/dev/null 2>&1 || warn "fallback timer could not be enabled"
+}
 
 restart_pasarguard() {
-  local restart_log="${TEMP_DIR}/pasarguard-restart.log"
-  local restart_status=0
-
-  if command -v timeout >/dev/null 2>&1; then
-    timeout --signal=TERM --kill-after=5s 45s pasarguard restart > "${restart_log}" 2>&1 || restart_status=$?
-
-    if [[ "${restart_status}" -eq 0 ]]; then
-      return 0
-    fi
-
-    if [[ "${restart_status}" -eq 124 ]] && grep -Eqi 'Application startup complete|Uvicorn running on' "${restart_log}"; then
-      return 0
+  if command -v pasarguard >/dev/null 2>&1; then
+    log "restarting PasarGuard"
+    if command -v timeout >/dev/null 2>&1; then
+      timeout --signal=TERM --kill-after=5s 50s pasarguard restart >/dev/null 2>&1 || warn "restart command did not finish cleanly; verify with: pasarguard status"
+    else
+      pasarguard restart >/dev/null 2>&1 || warn "restart command failed; restart PasarGuard manually"
     fi
   else
-    pasarguard restart > "${restart_log}" 2>&1 &
-    local restart_pid=$!
-
-    for _ in $(seq 1 45); do
-      if grep -Eqi 'Application startup complete|Uvicorn running on' "${restart_log}"; then
-        kill -TERM "${restart_pid}" 2>/dev/null || true
-        wait "${restart_pid}" 2>/dev/null || true
-        return 0
-      fi
-
-      if ! kill -0 "${restart_pid}" 2>/dev/null; then
-        wait "${restart_pid}"
-        return $?
-      fi
-
-      sleep 1
-    done
-
-    kill -TERM "${restart_pid}" 2>/dev/null || true
-    wait "${restart_pid}" 2>/dev/null || true
+    warn "pasarguard CLI not found; restart the panel manually"
   fi
-
-  echo "PasarGuard restart output:" >&2
-  tail -n 30 "${restart_log}" >&2 || true
-  return 1
 }
 
-if command -v pasarguard >/dev/null 2>&1; then
-  echo "در حال ری‌استارت PasarGuard؛ این مرحله ممکن است تا ۴۵ ثانیه طول بکشد..."
-  if ! restart_pasarguard; then
-    echo "Error: PasarGuard restart failed; restoring the previous configuration." >&2
-    if [[ -n "${ROLLBACK_FILE}" && -f "${ROLLBACK_FILE}" ]]; then
-      mv -f "${ROLLBACK_FILE}" "${DEST_FILE}"
-      ROLLBACK_FILE=""
-    fi
-    if [[ -f "${TEMP_DIR}/pasarguard.env" ]]; then
-      cp -p "${TEMP_DIR}/pasarguard.env" "${ENV_FILE}"
-    fi
-    if command -v timeout >/dev/null 2>&1; then
-      timeout --signal=TERM --kill-after=5s 45s pasarguard restart >/dev/null 2>&1 || true
-    else
-      pasarguard restart >/dev/null 2>&1 &
-    fi
-    exit 1
-  fi
-  echo "✅ نصب قالب سفارشی (${LANG_CODE}, ${VERSION}) انجام شد و PasarGuard ری‌استارت گردید."
-else
-  echo "✅ قالب سفارشی (${LANG_CODE}, ${VERSION}) در مسیر ${DEST_FILE} نصب شد."
-  echo "⚠️ دستور pasarguard یافت نشد، سرویس را به‌صورت دستی ری‌استارت کنید."
-fi
+main() {
+  backup_existing
+  install_template
+  install_plugin_files
+  configure_pasarguard
+  install_systemd_units
+
+  log "injecting Zomorod runtime and Special settings tab"
+  "${ZOMOROD_ROOT}/plugin/integrate-dashboard.sh" || warn "dashboard injection is pending and will be retried automatically"
+
+  restart_pasarguard
+  "${ZOMOROD_ROOT}/plugin/integrate-dashboard.sh" || true
+
+  printf '\n'
+  log "installation completed"
+  printf '  • Subscription template: %s\n' "${TEMPLATE_FILE}"
+  printf '  • Plugin files:          %s\n' "${ZOMOROD_ROOT}/plugin"
+  printf '  • Backup:                %s\n' "${BACKUP_DIR}"
+  printf '  • Settings tab:          زمرد تمپلیت · Special\n'
+  printf '\nOpen PasarGuard → Settings → Zomorod Template Special and save your preferences.\n'
+}
+
+main "$@"
