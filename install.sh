@@ -89,12 +89,12 @@ backup_existing() {
   [[ -f "${ENV_FILE}" ]] && cp -a "${ENV_FILE}" "${BACKUP_DIR}/pasarguard.env"
 }
 
-install_prebuilt_fallback() {
+install_repo_prebuilt() {
   local manifest="${TMP_DIR}/index.parts"
   local archive="${TMP_DIR}/index.html.gz"
   local part_file part count index
 
-  log "release asset unavailable; using repository prebuilt fallback"
+  log "using repository prebuilt UI to preserve the original Zomorod appearance"
   download "$(raw_url prebuilt/index.parts)" "${manifest}" || return 1
   read -r count < "${manifest}"
   [[ "${count}" =~ ^[1-9][0-9]?$ ]] || return 1
@@ -111,16 +111,17 @@ install_prebuilt_fallback() {
 
 install_template() {
   local release_path asset url
-  release_path="latest/download"
-  [[ "${VERSION}" != "latest" ]] && release_path="download/${VERSION}"
-  asset="${LANG_CODE}.html"
-  [[ "${LANG_CODE}" == "fa" ]] && asset="index.html"
-  url="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/${release_path}/${asset}"
-
   log "downloading Zomorod subscription UI (${LANG_CODE})"
-  if ! download "${url}" "${TMP_DIR}/template.html"; then
-    [[ "${LANG_CODE}" == "fa" && "${VERSION}" == "latest" ]] || fail "release asset ${asset} was not found"
-    install_prebuilt_fallback || fail "could not download a valid prebuilt template"
+
+  if [[ "${LANG_CODE}" == "fa" && "${VERSION}" == "latest" ]]; then
+    install_repo_prebuilt || fail "could not download the repository prebuilt template"
+  else
+    release_path="latest/download"
+    [[ "${VERSION}" != "latest" ]] && release_path="download/${VERSION}"
+    asset="${LANG_CODE}.html"
+    [[ "${LANG_CODE}" == "fa" ]] && asset="index.html"
+    url="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/${release_path}/${asset}"
+    download "${url}" "${TMP_DIR}/template.html" || fail "release asset ${asset} was not found"
   fi
 
   grep -qi '<!doctype html' "${TMP_DIR}/template.html" || fail "downloaded template is not valid HTML"
@@ -194,9 +195,9 @@ main() {
   printf '  • Subscription template: %s\n' "${TEMPLATE_FILE}"
   printf '  • Plugin files:          %s\n' "${ZOMOROD_ROOT}/plugin"
   printf '  • Backup:                %s\n' "${BACKUP_DIR}"
-  printf '  • Settings tab:          زمرد تمپلیت · Special\n'
+  printf '  • Settings tab:          Zomorod · Special\n'
   printf '  • Service lifecycle:     untouched (no restart / recreate / stop / start)\n'
-  printf '\nOpen PasarGuard → Settings → Zomorod Template Special and save your preferences.\n'
+  printf '\nOpen PasarGuard → Settings → Zomorod and save your preferences.\n'
 }
 
 main "$@"
