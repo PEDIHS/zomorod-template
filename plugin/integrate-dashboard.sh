@@ -10,6 +10,7 @@ COMPOSE_FILE="${PASARGUARD_ROOT}/docker-compose.yml"
 COMPOSE_PROJECT="${PASARGUARD_COMPOSE_PROJECT:-pasarguard}"
 MARKER_ADMIN="zomorod-special-loader"
 MARKER_RUNTIME="zomorod-runtime-inline"
+MARKER_THEME="zomorod-pasarguard-theme-guard"
 
 log() { printf '[Zomorod] %s\n' "$*"; }
 warn() { printf '[Zomorod] WARNING: %s\n' "$*" >&2; }
@@ -106,6 +107,128 @@ find_container_subscription_template() {
   printf '%s\n' "${found}"
 }
 
+inject_theme_guard() {
+  local html="$1"
+  [[ -f "${html}" ]] || return 0
+
+  python3 - "${html}" "${MARKER_THEME}" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+marker = sys.argv[2]
+original = path.read_text(encoding="utf-8")
+if f'id="{marker}"' in original:
+    raise SystemExit(0)
+
+guard = f'''<script id="{marker}">
+(() => {{
+  try {{
+    const key = 'theme';
+    const backupKey = 'zomorod-pasarguard-theme';
+    const valid = (value) => ['light', 'dark', 'system'].includes(value);
+    const proto = Storage.prototype;
+    const nativeGet = proto.getItem;
+    const nativeSet = proto.setItem;
+    const nativeRemove = proto.removeItem;
+    const saved = nativeGet.call(localStorage, backupKey);
+    const current = nativeGet.call(localStorage, key);
+
+    if (valid(saved) && current !== saved) {{
+      nativeSet.call(localStorage, key, saved);
+    }} else if (!valid(saved) && valid(current)) {{
+      nativeSet.call(localStorage, backupKey, current);
+    }}
+
+    proto.setItem = function (name, value) {{
+      const result = nativeSet.call(this, name, value);
+      if (this === localStorage && name === key && valid(String(value))) {{
+        nativeSet.call(this, backupKey, String(value));
+      }}
+      return result;
+    }};
+
+    proto.removeItem = function (name) {{
+      const result = nativeRemove.call(this, name);
+      if (this === localStorage && name === key) nativeRemove.call(this, backupKey);
+      return result;
+    }};
+  }} catch (_) {{}}
+}})();
+</script>'''
+
+head = re.search(r'<head\b[^>]*>', original, flags=re.I)
+if head:
+    pos = head.end()
+    html = original[:pos] + '\n' + guard + original[pos:]
+else:
+    html = guard + '\n' + original
+path.write_text(html, encoding="utf-8")
+PY
+}
+
+inject_theme_guard_container() {
+  local cid="$1" html="$2"
+  docker exec "${cid}" test -f "${html}" >/dev/null 2>&1 || return 0
+
+  docker exec -i "${cid}" python3 - "${html}" "${MARKER_THEME}" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+marker = sys.argv[2]
+original = path.read_text(encoding="utf-8")
+if f'id="{marker}"' in original:
+    raise SystemExit(0)
+
+guard = f'''<script id="{marker}">
+(() => {{
+  try {{
+    const key = 'theme';
+    const backupKey = 'zomorod-pasarguard-theme';
+    const valid = (value) => ['light', 'dark', 'system'].includes(value);
+    const proto = Storage.prototype;
+    const nativeGet = proto.getItem;
+    const nativeSet = proto.setItem;
+    const nativeRemove = proto.removeItem;
+    const saved = nativeGet.call(localStorage, backupKey);
+    const current = nativeGet.call(localStorage, key);
+
+    if (valid(saved) && current !== saved) {{
+      nativeSet.call(localStorage, key, saved);
+    }} else if (!valid(saved) && valid(current)) {{
+      nativeSet.call(localStorage, backupKey, current);
+    }}
+
+    proto.setItem = function (name, value) {{
+      const result = nativeSet.call(this, name, value);
+      if (this === localStorage && name === key && valid(String(value))) {{
+        nativeSet.call(this, backupKey, String(value));
+      }}
+      return result;
+    }};
+
+    proto.removeItem = function (name) {{
+      const result = nativeRemove.call(this, name);
+      if (this === localStorage && name === key) nativeRemove.call(this, backupKey);
+      return result;
+    }};
+  }} catch (_) {{}}
+}})();
+</script>'''
+
+head = re.search(r'<head\b[^>]*>', original, flags=re.I)
+if head:
+    pos = head.end()
+    html = original[:pos] + '\n' + guard + original[pos:]
+else:
+    html = guard + '\n' + original
+path.write_text(html, encoding="utf-8")
+PY
+}
+
 inject_admin_loader() {
   local html="$1" version
   [[ -f "${html}" ]] || return 0
@@ -196,6 +319,8 @@ integrate_host_dashboard() {
   if ! cmp -s "${ADMIN_JS}" "${build_dir}/statics/zomorod-special.js" 2>/dev/null; then
     install -m 0644 "${ADMIN_JS}" "${build_dir}/statics/zomorod-special.js"
   fi
+  inject_theme_guard "${build_dir}/index.html"
+  inject_theme_guard "${build_dir}/404.html"
   inject_admin_loader "${build_dir}/index.html"
   inject_admin_loader "${build_dir}/404.html"
   log "dashboard integration is healthy at ${build_dir}"
@@ -236,6 +361,8 @@ integrate_docker() {
   if [[ -n "${build_dir}" ]]; then
     docker exec "${cid}" mkdir -p "${build_dir}/statics"
     docker cp "${ADMIN_JS}" "${cid}:${build_dir}/statics/zomorod-special.js" >/dev/null
+    inject_theme_guard_container "${cid}" "${build_dir}/index.html"
+    inject_theme_guard_container "${cid}" "${build_dir}/404.html"
     inject_admin_loader_container "${cid}" "${build_dir}/index.html"
     inject_admin_loader_container "${cid}" "${build_dir}/404.html"
     log "dashboard integration is healthy inside Docker service ${service} (${build_dir})"
