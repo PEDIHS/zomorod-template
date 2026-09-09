@@ -52,6 +52,14 @@ detect_backend_service() {
   printf '%s\n' "${service}"
 }
 
+get_backend_container() {
+  local service="$1" cid
+  cid="$(docker compose -f "${COMPOSE_FILE}" -p "${COMPOSE_PROJECT}" ps -q "${service}" 2>/dev/null || true)"
+  [[ -n "${cid}" ]] || return 1
+  [[ "$(docker inspect -f '{{.State.Running}}' "${cid}" 2>/dev/null || true)" == "true" ]] || return 1
+  printf '%s\n' "${cid}"
+}
+
 find_dashboard_build() {
   local candidate
   for candidate in \
@@ -78,6 +86,20 @@ find_container_dashboard_build() {
   found="$(docker exec "${cid}" sh -c "find /code /app /opt -maxdepth 5 -type f -path '*/dashboard/build/index.html' -print -quit 2>/dev/null" 2>/dev/null || true)"
   [[ -n "${found}" ]] || return 1
   printf '%s\n' "${found%/index.html}"
+}
+
+find_container_subscription_template() {
+  local cid="$1" candidate found
+  for candidate in /code/app/templates/subscription/index.html /app/app/templates/subscription/index.html /opt/pasarguard/app/templates/subscription/index.html; do
+    if docker exec "${cid}" test -f "${candidate}" >/dev/null 2>&1; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+
+  found="$(docker exec "${cid}" sh -c "find /code /app /opt -maxdepth 6 -type f -path '*/app/templates/subscription/index.html' -print -quit 2>/dev/null" 2>/dev/null || true)"
+  [[ -n "${found}" ]] || return 1
+  printf '%s\n' "${found}"
 }
 
 inject_admin_loader() {
@@ -126,8 +148,8 @@ PY
 }
 
 inject_subscription_runtime() {
-  [[ -f "${SUB_TEMPLATE}" ]] || { warn "subscription template not found: ${SUB_TEMPLATE}"; return 0; }
-  [[ -s "${RUNTIME_JS}" ]] || { warn "runtime JS not found: ${RUNTIME_JS}"; return 0; }
+  [[ -f "${SUB_TEMPLATE}" ]] || { warn "subscription template not found: ${SUB_TEMPLATE}"; return 1; }
+  [[ -s "${RUNTIME_JS}" ]] || { warn "runtime JS not found: ${RUNTIME_JS}"; return 1; }
 
   python3 - "${SUB_TEMPLATE}" "${RUNTIME_JS}" "${MARKER_RUNTIME}" <<'PY'
 from pathlib import Path
@@ -162,46 +184,73 @@ integrate_host_dashboard() {
   log "dashboard integration is healthy at ${build_dir}"
 }
 
-integrate_docker_dashboard() {
+activate_live_docker_subscription() {
+  local cid="$1" service="$2" live_template
+  [[ -s "${SUB_TEMPLATE}" ]] || return 1
+  live_template="$(find_container_subscription_template "${cid}" || true)"
+  [[ -n "${live_template}" ]] || return 1
+
+  docker cp "${SUB_TEMPLATE}" "${cid}:${live_template}" >/dev/null
+  if ! docker exec "${cid}" grep -q "${MARKER_RUNTIME}" "${live_template}" >/dev/null 2>&1; then
+    warn "live subscription template verification failed inside Docker service ${service}"
+    return 1
+  fi
+
+  log "subscription UI activated live inside Docker service ${service} (${live_template}); no restart/recreate used"
+}
+
+integrate_docker() {
   compose_available || return 1
   [[ -f "${COMPOSE_FILE}" ]] || return 1
 
-  local service cid build_dir
+  local service cid build_dir subscription_ok=0 dashboard_ok=0
   service="$(detect_backend_service || true)"
   [[ -n "${service}" ]] || return 1
-
-  cid="$(docker compose -f "${COMPOSE_FILE}" -p "${COMPOSE_PROJECT}" ps -q "${service}" 2>/dev/null || true)"
+  cid="$(get_backend_container "${service}" || true)"
   [[ -n "${cid}" ]] || return 1
-  [[ "$(docker inspect -f '{{.State.Running}}' "${cid}" 2>/dev/null || true)" == "true" ]] || return 1
+
+  if activate_live_docker_subscription "${cid}" "${service}"; then
+    subscription_ok=1
+  else
+    warn "could not hot-activate the subscription template; persistent custom-template settings remain installed for the next normal PasarGuard start"
+  fi
 
   build_dir="$(find_container_dashboard_build "${cid}" || true)"
-  [[ -n "${build_dir}" ]] || return 1
+  if [[ -n "${build_dir}" ]]; then
+    docker exec "${cid}" mkdir -p "${build_dir}/statics"
+    docker cp "${ADMIN_JS}" "${cid}:${build_dir}/statics/zomorod-special.js" >/dev/null
+    inject_admin_loader_container "${cid}" "${build_dir}/index.html"
+    inject_admin_loader_container "${cid}" "${build_dir}/404.html"
+    log "dashboard integration is healthy inside Docker service ${service} (${build_dir})"
+    dashboard_ok=1
+  else
+    warn "dashboard build was not found inside Docker service ${service}"
+  fi
 
-  docker exec "${cid}" mkdir -p "${build_dir}/statics"
-  docker cp "${ADMIN_JS}" "${cid}:${build_dir}/statics/zomorod-special.js" >/dev/null
-  inject_admin_loader_container "${cid}" "${build_dir}/index.html"
-  inject_admin_loader_container "${cid}" "${build_dir}/404.html"
-  log "dashboard integration is healthy inside Docker service ${service} (${build_dir})"
+  [[ ${subscription_ok} -eq 1 || ${dashboard_ok} -eq 1 ]]
 }
 
 main() {
   [[ ${EUID} -eq 0 ]] || { warn "run as root"; exit 1; }
   [[ -s "${ADMIN_JS}" ]] || { warn "admin integration JS not found: ${ADMIN_JS}"; exit 1; }
 
-  inject_subscription_runtime
+  inject_subscription_runtime || true
 
   local build_dir
   build_dir="$(find_dashboard_build || true)"
   if [[ -n "${build_dir}" && -f "${build_dir}/index.html" ]]; then
     integrate_host_dashboard "${build_dir}"
+  fi
+
+  if integrate_docker; then
     exit 0
   fi
 
-  if integrate_docker_dashboard; then
+  if [[ -n "${build_dir}" && -f "${build_dir}/index.html" ]]; then
     exit 0
   fi
 
-  warn "PasarGuard dashboard build/container is not available yet; subscription runtime is active and dashboard integration will be retried automatically."
+  warn "PasarGuard dashboard/container is not available yet; integration will be retried automatically. No service restart was attempted."
 }
 
 main "$@"
