@@ -43,6 +43,16 @@ jobs:
           bash -n uninstall.sh
           bash -n plugin/integrate-dashboard.sh
 
+      - name: Enforce restart-free installer safety
+        run: |
+          set -euo pipefail
+          files=(install.sh plugin/integrate-dashboard.sh)
+          forbidden='docker[[:space:]]+(restart|stop|kill|rm)([[:space:]]|$)|docker[[:space:]]+compose[^\n]*(up|down|restart|stop|kill|rm)([[:space:]]|$)|pasarguard[[:space:]]+(restart|down|up)([[:space:]]|$)'
+          if grep -En "$forbidden" "${files[@]}"; then
+            echo 'Unsafe service lifecycle command found in install/integration path.' >&2
+            exit 1
+          fi
+
       - name: Test self-healing integration idempotency
         run: |
           set -euo pipefail
