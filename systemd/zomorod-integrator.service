@@ -1,0 +1,9 @@
+[Unit]
+Description=Zomorod Special integration for PasarGuard
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/zomorod/plugin/integrate-dashboard.sh
+User=root
+Group=root
