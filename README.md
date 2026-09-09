@@ -51,7 +51,7 @@
 
 ### ⚙️ تب «زمرد تمپلیت · Special»
 
-بعد از نصب، Integration زمرد در داشبورد PasarGuard یک ورودی اختصاصی برای تنظیمات ایجاد می‌کند. از آن بخش می‌توانید:
+بعد از نصب، Integration زمرد در همان نوار تب‌های Settings پاسارگارد یک تب اختصاصی ایجاد می‌کند. از آن بخش می‌توانید:
 
 - نام فروشگاه را تغییر دهید
 - کل لایه زمرد را فعال/غیرفعال کنید
@@ -86,7 +86,7 @@
 
 ```text
 x-zomorod-enabled
-x-zomorod-store-name
+x-zomorod-store-name-b64
 x-zomorod-show-configs
 x-zomorod-show-wireguard
 x-zomorod-show-ping
@@ -96,6 +96,8 @@ x-zomorod-announcement-mode
 x-zomorod-announcement-times
 x-zomorod-announcement-duration
 ```
+
+نام فروشگاه به‌صورت UTF-8 Base64 ذخیره می‌شود تا مقدار Header همیشه با محدودیت Latin-1 پاسارگارد سازگار بماند؛ Runtime زمرد آن را در مرورگر decode می‌کند.
 
 این طراحی باعث می‌شود تنظیمات زمرد با خود Backup/Database پاسارگارد همراه باشند و فایل تنظیمات مستقل دیگری برای داده‌های اصلی نیاز نباشد.
 
@@ -132,7 +134,7 @@ Installer به‌صورت خلاصه:
 1. از Template و `.env` فعلی Backup می‌گیرد.
 2. فایل Subscription UI زمرد را در مسیر Custom Template نصب می‌کند.
 3. تنظیمات رسمی Custom Template پاسارگارد را در `/opt/pasarguard/.env` تنظیم می‌کند.
-4. فایل‌های افزونه را خارج از سورس Pasارگارد در `/opt/zomorod` قرار می‌دهد.
+4. فایل‌های افزونه را خارج از سورس PasarGuard در `/opt/zomorod` قرار می‌دهد.
 5. اسکریپت سبک Integration را به Build داشبورد متصل می‌کند.
 6. یک `systemd.path` و یک Timer پشتیبان نصب می‌کند تا بعد از بازسازی Dashboard، Integration دوباره اعمال شود.
 7. PasarGuard را Restart می‌کند.
@@ -150,19 +152,21 @@ Installer به‌صورت خلاصه:
 
 زمرد عمداً سورس Python یا React اصلی PasarGuard را Fork یا Patch دائمی نمی‌کند. فایل‌های اصلی افزونه در `/opt/zomorod` قرار دارند و تنظیمات در Database خود PasarGuard ذخیره می‌شوند.
 
-پس از آپدیت و Build مجدد Dashboard، سرویس `zomorod-integrator` Loader کوچک زمرد را دوباره به فایل Build متصل می‌کند. Timer نیز هر چند دقیقه یک بار سلامت Integration را بررسی می‌کند.
+پس از آپدیت و Build مجدد Dashboard، سرویس `zomorod-integrator` Loader کوچک زمرد را دوباره به فایل Build متصل می‌کند. Timer نیز هر چند دقیقه یک بار سلامت Integration را بررسی می‌کند و فقط در صورت نیاز فایل‌ها را تغییر می‌دهد.
 
 ### محدودیت مهم
 
 در ساختار فعلی PasarGuard یک Plugin API رسمی برای اضافه‌کردن Route/Tab به Dashboard وجود ندارد. بنابراین بخش Dashboard زمرد با **self-healing injection** پیاده‌سازی شده است؛ این روش برای آپدیت‌های عادی طراحی شده، اما اگر upstream ساختار DOM، مسیر Dashboard یا مدل احراز هویت را به‌صورت اساسی تغییر دهد، ممکن است نسخه جدید زمرد لازم شود.
 
-این محدودیت عمداً شفاف بیان شده و پروژه ادعای سازگاری تضمینی با هر تغییر شکستن‌دهنده آینده را ندارد.
+این محدودیت عمداً شفاف بیان شده و پروژه ادعای سازگاری تضمینی با هر تغییر breaking آینده را ندارد.
 
 ## WireGuard
 
 زمرد از مسیر native PasarGuard برای دریافت WireGuard استفاده می‌کند و یک بخش اختصاصی دانلود فایل در صفحه اشتراک ارائه می‌دهد.
 
 وقتی WireGuard در تنظیمات زمرد و `manual_sub_request.wireguard` پاسارگارد فعال باشد، کاربر می‌تواند فایل استاندارد `.conf` را دریافت کند. سیاست‌های دسترسی، وضعیت کاربر و HWID همچنان توسط خود PasarGuard اعمال می‌شوند.
+
+خاموش کردن نمایش WireGuard در زمرد، هم کارت دانلود اختصاصی و هم ردیف‌های WG داخل فهرست کانفیگ‌ها را مخفی می‌کند.
 
 ## اعلان زمان‌بندی‌شده
 
