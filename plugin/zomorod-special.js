@@ -2,7 +2,6 @@
   'use strict';
 
   const VERSION = '4.0.0';
-  const ROUTE = '#/settings/zomorod-special';
   const HEADER_PREFIX = 'x-zomorod-';
   const MARKER_ID = 'zomorod-special-root';
   const NAV_ID = 'zomorod-special-nav';
@@ -21,10 +20,11 @@
   };
 
   const css = `
-    #${NAV_ID}{position:relative}
-    #${NAV_ID} a{display:flex;align-items:center;gap:.55rem;width:100%;padding:.55rem .75rem;border-radius:.65rem;text-decoration:none;font-size:.875rem;font-weight:650;color:inherit;background:linear-gradient(135deg,rgba(5,150,105,.10),rgba(202,138,4,.08));border:1px solid rgba(16,185,129,.16)}
-    #${NAV_ID} a:hover{background:linear-gradient(135deg,rgba(5,150,105,.16),rgba(202,138,4,.13))}
-    #${NAV_ID} .z-badge{font-size:.62rem;padding:.12rem .4rem;border-radius:999px;background:#0f766e;color:#fff;letter-spacing:.03em}
+    #${NAV_ID}{position:relative;display:flex;flex-shrink:0;align-items:center;gap:.45rem;padding:.5rem .75rem;white-space:nowrap;border:0;border-bottom:2px solid transparent;background:transparent;color:inherit;font:inherit;font-size:.875rem;font-weight:650;cursor:pointer;transition:color .15s ease,border-color .15s ease,background .15s ease}
+    #${NAV_ID}:hover{background:linear-gradient(135deg,rgba(5,150,105,.07),rgba(202,138,4,.05))}
+    #${NAV_ID}[data-z-active="true"]{border-bottom-color:#047857;color:inherit;background:linear-gradient(135deg,rgba(5,150,105,.09),rgba(202,138,4,.05))}
+    #${NAV_ID} .z-gem-mini{font-size:.82rem;color:#047857}
+    #${NAV_ID} .z-badge{font-size:.58rem;padding:.1rem .36rem;border-radius:999px;background:linear-gradient(135deg,#047857,#8a6414);color:#fff;letter-spacing:.03em;line-height:1.3}
     #${MARKER_ID}{position:fixed;inset:0;z-index:2147483000;background:rgba(3,10,8,.62);backdrop-filter:blur(10px);display:flex;justify-content:center;align-items:flex-start;overflow:auto;padding:3.5rem 1rem 2rem;direction:rtl;font-family:inherit}
     #${MARKER_ID} .z-shell{width:min(1040px,100%);background:var(--background,#fff);color:var(--foreground,#111827);border:1px solid rgba(16,185,129,.23);border-radius:1.2rem;box-shadow:0 24px 80px rgba(0,0,0,.28);overflow:hidden}
     #${MARKER_ID} .z-head{display:flex;justify-content:space-between;gap:1rem;align-items:center;padding:1.1rem 1.25rem;background:linear-gradient(135deg,rgba(4,120,87,.14),rgba(161,98,7,.12));border-bottom:1px solid rgba(16,185,129,.17)}
@@ -101,6 +101,10 @@
   function field(id) { return document.getElementById(id); }
   function checked(id) { return Boolean(field(id)?.checked); }
   function value(id) { return String(field(id)?.value ?? '').trim(); }
+  function setTabActive(active) {
+    const tab = document.getElementById(NAV_ID);
+    if (tab) tab.dataset.zActive = active ? 'true' : 'false';
+  }
 
   function render(settings) {
     document.getElementById(MARKER_ID)?.remove();
@@ -151,10 +155,11 @@
         <div class="z-actions"><span class="z-status" id="z-status">آماده ذخیره</span><button class="z-save" id="z-save">ذخیره تنظیمات زمرد</button></div>
       </div>`;
     document.body.appendChild(root);
+    setTabActive(true);
 
     const close = () => {
       root.remove();
-      if (window.location.hash === ROUTE) window.location.hash = '#/settings/subscriptions';
+      setTabActive(false);
     };
     root.querySelector('[data-z-close]')?.addEventListener('click', close);
     root.addEventListener('click', (event) => { if (event.target === root) close(); });
@@ -210,42 +215,50 @@
   }
 
   async function openPage() {
+    setTabActive(true);
     try {
       const settings = await api('/api/settings');
       render(settings);
     } catch (error) {
       console.error('[Zomorod] Could not load settings', error);
+      setTabActive(false);
       alert(`زمرد نتوانست تنظیمات PasarGuard را بخواند.\n${error.message || error}`);
-      if (window.location.hash === ROUTE) window.location.hash = '#/settings/subscriptions';
     }
   }
 
-  function ensureNav() {
+  function findSettingsTabBar() {
+    const bars = [...document.querySelectorAll('.scrollbar-hide, [class*="overflow-x-auto"][class*="border-b"]')];
+    return bars.find((bar) => {
+      const buttons = [...bar.querySelectorAll('button')];
+      if (buttons.length < 3) return false;
+      const text = bar.textContent || '';
+      return /subscription|subscriptions|اشتراک|theme|general|عمومی|تنظیمات/i.test(text);
+    }) || null;
+  }
+
+  function ensureTab() {
     if (document.getElementById(NAV_ID)) return;
-    const candidates = [...document.querySelectorAll('a[href*="settings"],button')];
-    const settingsAnchor = candidates.find((node) => /تنظیمات|settings/i.test(node.textContent || ''));
-    const parent = settingsAnchor?.parentElement?.parentElement || settingsAnchor?.parentElement;
-    if (!parent) return;
+    const tabBar = findSettingsTabBar();
+    if (!tabBar) return;
 
-    const wrapper = document.createElement('div');
-    wrapper.id = NAV_ID;
-    wrapper.innerHTML = '<a href="#/settings/zomorod-special"><span>◆</span><span>زمرد تمپلیت</span><span class="z-badge">Special</span></a>';
-    parent.appendChild(wrapper);
-    wrapper.querySelector('a')?.addEventListener('click', (event) => {
-      event.preventDefault();
-      window.location.hash = ROUTE;
-      openPage();
-    });
+    const button = document.createElement('button');
+    button.id = NAV_ID;
+    button.type = 'button';
+    button.dataset.zActive = 'false';
+    button.title = 'Zomorod Template Special';
+    button.innerHTML = '<span class="z-gem-mini">◆</span><span>زمرد تمپلیت</span><span class="z-badge">Special</span>';
+    button.addEventListener('click', openPage);
+    tabBar.appendChild(button);
   }
 
-  function route() {
-    ensureNav();
-    if (window.location.hash === ROUTE && !document.getElementById(MARKER_ID)) openPage();
+  function maintain() {
+    ensureTab();
+    if (!document.getElementById(MARKER_ID)) setTabActive(false);
   }
 
-  window.addEventListener('hashchange', route);
-  const observer = new MutationObserver(route);
+  window.addEventListener('hashchange', maintain);
+  const observer = new MutationObserver(maintain);
   observer.observe(document.documentElement, { subtree: true, childList: true });
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', route, { once: true });
-  else route();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', maintain, { once: true });
+  else maintain();
 })();
