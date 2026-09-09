@@ -160,7 +160,7 @@
     setVisible('.treasury-links-section', config.showConfigs);
     setVisible('.treasury-quick-action', config.showConfigs);
     setVisible('.treasury-server-ping', config.showPing);
-    setVisible('.treasury-notice', announcementIsActive(config));
+    setVisible('.treasury-notice:not(#zomorod-wireguard-card)', announcementIsActive(config));
 
     document.querySelectorAll('.treasury-section-title').forEach((title) => {
       const text = title.textContent || '';
