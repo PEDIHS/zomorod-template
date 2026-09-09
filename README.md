@@ -18,8 +18,8 @@
 </p>
 
 <p align="center">
-  <img src="screenshots/fa.png" alt="Zomorod Persian subscription UI" width="31%">
-  <img src="screenshots/en.png" alt="Zomorod desktop subscription UI" width="62%">
+  <img src="screenshots/fa.svg" alt="Zomorod Persian subscription UI" width="31%">
+  <img src="screenshots/en.svg" alt="Zomorod desktop subscription UI" width="62%">
 </p>
 
 <p align="center">
