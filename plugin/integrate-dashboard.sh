@@ -64,7 +64,7 @@ marker = sys.argv[3]
 original = template_path.read_text(encoding="utf-8")
 runtime = runtime_path.read_text(encoding="utf-8")
 pattern = re.compile(rf'\s*<script id="{re.escape(marker)}">.*?</script>\s*', re.S)
-html = pattern.sub("\n", original)
+html = pattern.sub("", original)
 block = f'\n<script id="{marker}">\n{runtime}\n</script>\n'
 if "</body>" in html:
     html = html.replace("</body>", block + "</body>", 1)
