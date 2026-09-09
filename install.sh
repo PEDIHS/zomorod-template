@@ -10,6 +10,8 @@ ZOMOROD_ROOT="/opt/zomorod"
 TEMPLATE_DIR="/var/lib/pasarguard/templates/subscription"
 TEMPLATE_FILE="${TEMPLATE_DIR}/index.html"
 ENV_FILE="${PASARGUARD_ROOT}/.env"
+COMPOSE_FILE="${PASARGUARD_ROOT}/docker-compose.yml"
+COMPOSE_PROJECT="pasarguard"
 TMP_DIR=""
 BACKUP_DIR=""
 SOURCE_REF="main"
@@ -173,17 +175,46 @@ install_systemd_units() {
   systemctl enable --now zomorod-integrator.timer >/dev/null 2>&1 || warn "fallback timer could not be enabled"
 }
 
-restart_pasarguard() {
-  if command -v pasarguard >/dev/null 2>&1; then
-    log "restarting PasarGuard"
-    if command -v timeout >/dev/null 2>&1; then
-      timeout --signal=TERM --kill-after=5s 50s pasarguard restart >/dev/null 2>&1 || warn "restart command did not finish cleanly; verify with: pasarguard status"
-    else
-      pasarguard restart >/dev/null 2>&1 || warn "restart command failed; restart PasarGuard manually"
+detect_backend_service() {
+  [[ -f "${COMPOSE_FILE}" ]] || return 1
+  command -v docker >/dev/null 2>&1 || return 1
+  docker compose version >/dev/null 2>&1 || return 1
+
+  local services candidate
+  services="$(docker compose -f "${COMPOSE_FILE}" -p "${COMPOSE_PROJECT}" config --services 2>/dev/null || true)"
+  for candidate in panel pasarguard; do
+    if grep -Fxq "${candidate}" <<<"${services}"; then
+      printf '%s\n' "${candidate}"
+      return 0
     fi
-  else
-    warn "pasarguard CLI not found; restart the panel manually"
+  done
+  return 1
+}
+
+reload_pasarguard_backend() {
+  local service
+  service="$(detect_backend_service || true)"
+  if [[ -z "${service}" ]]; then
+    warn "PasarGuard backend service could not be detected; full-stack restart was intentionally skipped to protect SSH/network connectivity."
+    warn "Apply the .env changes later by recreating only the PasarGuard backend service."
+    return 0
   fi
+
+  log "reloading only PasarGuard backend service (${service}); database/network services stay running"
+  if ! docker compose -f "${COMPOSE_FILE}" -p "${COMPOSE_PROJECT}" up -d --no-deps --force-recreate "${service}" >/dev/null; then
+    warn "backend recreate failed; the files are installed, but PasarGuard must be reloaded manually"
+    return 0
+  fi
+
+  local cid=""
+  for _ in $(seq 1 20); do
+    cid="$(docker compose -f "${COMPOSE_FILE}" -p "${COMPOSE_PROJECT}" ps -q "${service}" 2>/dev/null || true)"
+    if [[ -n "${cid}" && "$(docker inspect -f '{{.State.Running}}' "${cid}" 2>/dev/null || true)" == "true" ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+  warn "backend container did not report running state in time; integration timer will retry automatically"
 }
 
 main() {
@@ -196,7 +227,7 @@ main() {
   log "injecting Zomorod runtime and Special settings tab"
   "${ZOMOROD_ROOT}/plugin/integrate-dashboard.sh" || warn "dashboard injection is pending and will be retried automatically"
 
-  restart_pasarguard
+  reload_pasarguard_backend
   "${ZOMOROD_ROOT}/plugin/integrate-dashboard.sh" || true
 
   printf '\n'
