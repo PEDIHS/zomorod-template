@@ -109,6 +109,43 @@ install_repo_prebuilt() {
   gzip -dc "${archive}" > "${TMP_DIR}/template.html"
 }
 
+isolate_subscription_theme_storage() {
+  python3 - "${TMP_DIR}/template.html" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+html = path.read_text(encoding="utf-8")
+marker = "zomorod-theme-storage-isolation"
+html = re.sub(rf'\s*<script id="{marker}">.*?</script>\s*', '\n', html, flags=re.S)
+block = r'''<script id="zomorod-theme-storage-isolation">
+(() => {
+  if (window.__zomorodThemeStorageIsolated) return;
+  window.__zomorodThemeStorageIsolated = true;
+  const sourceKey = 'theme';
+  const scopedKey = 'zomorod-theme';
+  const proto = Storage.prototype;
+  const nativeGet = proto.getItem;
+  const nativeSet = proto.setItem;
+  const nativeRemove = proto.removeItem;
+  proto.getItem = function (key) { return nativeGet.call(this, key === sourceKey ? scopedKey : key); };
+  proto.setItem = function (key, value) { return nativeSet.call(this, key === sourceKey ? scopedKey : key, value); };
+  proto.removeItem = function (key) { return nativeRemove.call(this, key === sourceKey ? scopedKey : key); };
+})();
+</script>'''
+head = re.search(r'<head\b[^>]*>', html, flags=re.I)
+if head:
+    pos = head.end()
+    html = html[:pos] + '\n' + block + html[pos:]
+elif '</head>' in html.lower():
+    html = re.sub(r'</head>', block + '\n</head>', html, count=1, flags=re.I)
+else:
+    html = block + '\n' + html
+path.write_text(html, encoding="utf-8")
+PY
+}
+
 install_template() {
   local release_path asset url
   log "downloading Zomorod subscription UI (${LANG_CODE})"
@@ -126,6 +163,7 @@ install_template() {
 
   grep -qi '<!doctype html' "${TMP_DIR}/template.html" || fail "downloaded template is not valid HTML"
   [[ $(wc -c < "${TMP_DIR}/template.html") -gt 100000 ]] || fail "downloaded template is unexpectedly small"
+  isolate_subscription_theme_storage
   install -m 0644 "${TMP_DIR}/template.html" "${TEMPLATE_FILE}"
 }
 
@@ -196,6 +234,7 @@ main() {
   printf '  • Plugin files:          %s\n' "${ZOMOROD_ROOT}/plugin"
   printf '  • Backup:                %s\n' "${BACKUP_DIR}"
   printf '  • Settings tab:          Zomorod · Special\n'
+  printf '  • Theme storage:         isolated as zomorod-theme\n'
   printf '  • Service lifecycle:     untouched (no restart / recreate / stop / start)\n'
   printf '\nOpen PasarGuard → Settings → Zomorod and save your preferences.\n'
 }
