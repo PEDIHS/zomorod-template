@@ -1,12 +1,14 @@
 """Zomorod owner-only admin subscription namespaces for PasarGuard.
 
-This addon keeps PasarGuard's native per-user subscription token as the secret and
-adds an admin namespace in front of it:
+Keeps PasarGuard's native per-user subscription token as the secret and adds a
+short admin namespace in front of it:
 
     /sub/<admin-slug>/<native-user-token>
 
-Every request validates that the token resolves to a user owned by the mapped
-admin. A token from another admin returns 404, preventing cross-admin leakage.
+Each request validates that the resolved user belongs to the mapped admin. A
+foreign token returns 404. The custom short-slug path convertor is important:
+it prevents these routes from stealing PasarGuard's native /sub/<token>/<format>
+URLs, because native tokens contain a dot and do not match the slug convertor.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from starlette.convertors import Convertor, register_url_convertor
 
 from app.db import AsyncSession, get_db
 from app.db.models import Admin
@@ -35,6 +38,21 @@ from app.operation.subscription import SubscriptionOperation
 from app.routers.authentication import get_current
 from app.routers.dependencies import get_subscription_headers, get_subscription_usage_query
 from config import subscription_env_settings
+
+
+class ZomorodSlugConvertor(Convertor[str]):
+    regex = r"[a-z0-9][a-z0-9_-]{0,31}"
+
+    def convert(self, value: str) -> str:
+        return value.lower()
+
+    def to_string(self, value: str) -> str:
+        return value.lower()
+
+
+# Registration is idempotent in practice for a single app import; overwriting the
+# same named convertor during reloads is safe in Starlette.
+register_url_convertor("zslug", ZomorodSlugConvertor())
 
 router = APIRouter(tags=["Zomorod"])
 subscription_operator = SubscriptionOperation(operator_type=OperatorType.API)
@@ -161,7 +179,6 @@ async def upsert_admin_namespace(
         if existing and int(existing.get("admin_id", 0)) != int(db_admin.id):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Namespace already belongs to another admin")
 
-        # One canonical namespace per admin. Renaming replaces the old namespace.
         for old_slug, item in list(routes.items()):
             if old_slug != slug and int(item.get("admin_id", 0)) == int(db_admin.id):
                 del routes[old_slug]
@@ -200,16 +217,15 @@ async def _validate_namespace(db: AsyncSession, admin_slug: str, token: str) -> 
 
     db_user = await subscription_operator.get_validated_sub(db, token, load_admin_role=True)
     if int(getattr(db_user, "admin_id", 0) or 0) != int(mapping.get("admin_id", 0) or 0):
-        # Deliberately return 404 rather than 403 so a foreign token does not reveal
-        # whether either the namespace or token is valid.
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
 
 
 SUB_PREFIX = f"/{subscription_env_settings.path}"
+SCOPE = "{admin_slug:zslug}"
 
 
-@router.get(f"{SUB_PREFIX}/{{admin_slug}}/{{token}}/")
-@router.get(f"{SUB_PREFIX}/{{admin_slug}}/{{token}}", include_in_schema=False)
+@router.get(f"{SUB_PREFIX}/{SCOPE}/{{token}}/")
+@router.get(f"{SUB_PREFIX}/{SCOPE}/{{token}}", include_in_schema=False)
 async def namespaced_subscription(
     request: Request,
     admin_slug: str,
@@ -230,8 +246,8 @@ async def namespaced_subscription(
     )
 
 
-@router.head(f"{SUB_PREFIX}/{{admin_slug}}/{{token}}/")
-@router.head(f"{SUB_PREFIX}/{{admin_slug}}/{{token}}", include_in_schema=False)
+@router.head(f"{SUB_PREFIX}/{SCOPE}/{{token}}/")
+@router.head(f"{SUB_PREFIX}/{SCOPE}/{{token}}", include_in_schema=False)
 async def namespaced_subscription_headers(
     request: Request,
     admin_slug: str,
@@ -250,7 +266,7 @@ async def namespaced_subscription_headers(
     return Response(headers=response_headers)
 
 
-@router.get(f"{SUB_PREFIX}/{{admin_slug}}/{{token}}/info", response_model=SubscriptionUserResponse)
+@router.get(f"{SUB_PREFIX}/{SCOPE}/{{token}}/info", response_model=SubscriptionUserResponse)
 async def namespaced_subscription_info(
     request: Request,
     admin_slug: str,
@@ -264,7 +280,7 @@ async def namespaced_subscription_info(
     return JSONResponse(content=user_data.model_dump(mode="json"), headers=response_headers)
 
 
-@router.get(f"{SUB_PREFIX}/{{admin_slug}}/{{token}}/raw")
+@router.get(f"{SUB_PREFIX}/{SCOPE}/{{token}}/raw")
 async def namespaced_subscription_raw(
     request: Request,
     admin_slug: str,
@@ -275,7 +291,7 @@ async def namespaced_subscription_raw(
     return await subscription_operator.user_subscription_raw(db, token=token, request_url=str(request.url))
 
 
-@router.get(f"{SUB_PREFIX}/{{admin_slug}}/{{token}}/apps", response_model=list[Application])
+@router.get(f"{SUB_PREFIX}/{SCOPE}/{{token}}/apps", response_model=list[Application])
 async def namespaced_subscription_apps(
     admin_slug: str,
     token: str,
@@ -285,7 +301,7 @@ async def namespaced_subscription_apps(
     return await subscription_operator.user_subscription_apps(db, token)
 
 
-@router.get(f"{SUB_PREFIX}/{{admin_slug}}/{{token}}/usage", response_model=UserUsageStatsList)
+@router.get(f"{SUB_PREFIX}/{SCOPE}/{{token}}/usage", response_model=UserUsageStatsList)
 async def namespaced_subscription_usage(
     admin_slug: str,
     token: str,
@@ -296,7 +312,7 @@ async def namespaced_subscription_usage(
     return await subscription_operator.get_user_usage(db, token=token, query=query)
 
 
-@router.get(f"{SUB_PREFIX}/{{admin_slug}}/{{token}}/{{client_type}}")
+@router.get(f"{SUB_PREFIX}/{SCOPE}/{{token}}/{{client_type}}")
 async def namespaced_subscription_client(
     request: Request,
     admin_slug: str,
