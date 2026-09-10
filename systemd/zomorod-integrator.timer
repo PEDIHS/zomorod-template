@@ -1,10 +1,10 @@
 [Unit]
-Description=Periodic Zomorod/PasarGuard integration health check
+Description=Start persistent Zomorod/PasarGuard integration guard
 
 [Timer]
-OnBootSec=1min
-OnUnitActiveSec=5min
-AccuracySec=30s
+OnActiveSec=1s
+OnUnitInactiveSec=10s
+AccuracySec=1s
 Unit=zomorod-integrator.service
 Persistent=true
 
