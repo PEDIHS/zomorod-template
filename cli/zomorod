@@ -28,6 +28,14 @@ resolve_main_sha() {
   python3 -c 'import json,sys; d=json.load(sys.stdin); s=d.get("sha",""); print(s if len(s)==40 else "")' <<<"$json"
 }
 
+reactivate_persistence_guard() {
+  command -v systemctl >/dev/null 2>&1 || return 0
+  run_root systemctl daemon-reload >/dev/null 2>&1 || true
+  run_root systemctl enable zomorod-integrator.timer >/dev/null 2>&1 || true
+  run_root systemctl restart zomorod-integrator.timer >/dev/null 2>&1 || true
+  run_root systemctl restart zomorod-integrator.service >/dev/null 2>&1 || true
+}
+
 case "${1:-}" in
   update)
     shift
@@ -52,7 +60,13 @@ case "${1:-}" in
 
     echo "[Zomorod] applying immutable snapshot..."
     run_root bash "$tmp" "$@"
-    echo "[Zomorod] update finished at commit $sha. Close old PasarGuard tabs and reopen Settings."
+
+    # The official PasarGuard restart may replace the container. Re-arm the
+    # host-level guard immediately so dashboard plugins are injected again into
+    # the new container without waiting for the periodic timer.
+    reactivate_persistence_guard
+
+    echo "[Zomorod] update finished at commit $sha. Persistent integration guard is active."
     ;;
   version)
     file="/opt/zomorod/plugin/zomorod-special.js"
@@ -65,6 +79,7 @@ case "${1:-}" in
     test -s /opt/zomorod/backend/zomorod_admin_subscriptions.py && echo 'Admin namespaces backend: installed' || echo 'Admin namespaces backend: missing'
     test -s /var/lib/pasarguard/templates/subscription/index.html && echo 'Subscription template: installed' || echo 'Subscription template: missing'
     if command -v systemctl >/dev/null 2>&1; then
+      systemctl is-active zomorod-integrator.service >/dev/null 2>&1 && echo 'Persistence guard: active' || echo 'Persistence guard: inactive'
       systemctl is-enabled zomorod-integrator.timer >/dev/null 2>&1 && echo 'Self-heal timer: enabled' || echo 'Self-heal timer: not enabled'
     fi
     ;;
