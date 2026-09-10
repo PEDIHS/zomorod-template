@@ -42,8 +42,17 @@ log() { printf '\033[1;32m[Zomorod]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[Zomorod]\033[0m %s\n' "$*" >&2; }
 fail() { printf '\033[1;31m[Zomorod]\033[0m %s\n' "$*" >&2; exit 1; }
 
+on_error() {
+  local rc=$?
+  local line=${BASH_LINENO[0]:-unknown}
+  local cmd=${BASH_COMMAND:-unknown}
+  printf '\033[1;31m[Zomorod]\033[0m installer failed at line %s (exit %s): %s\n' "$line" "$rc" "$cmd" >&2
+  exit "$rc"
+}
+trap on_error ERR
+
 cleanup() {
-  if [[ -n "${TMP_DIR}" && -d "${TMP_DIR}" ]]; then rm -rf "${TMP_DIR}"; fi
+  if [[ -n "${TMP_DIR}" && -d "${TMP_DIR}" ]]; then rm -rf "${TMP_DIR}" || true; fi
   return 0
 }
 trap cleanup EXIT
@@ -79,9 +88,17 @@ fi
 raw_url() { printf 'https://raw.githubusercontent.com/%s/%s/%s/%s?zomorod=%s' "${REPO_OWNER}" "${REPO_NAME}" "${SOURCE_REF}" "$1" "$(date +%s)"; }
 
 backup_existing() {
-  [[ -f "${TEMPLATE_FILE}" ]] && cp -a "${TEMPLATE_FILE}" "${BACKUP_DIR}/subscription-index.html"
-  [[ -f "${ENV_FILE}" ]] && cp -a "${ENV_FILE}" "${BACKUP_DIR}/pasarguard.env"
-  [[ -f "/var/lib/pasarguard/zomorod/admin-subscriptions.json" ]] && cp -a "/var/lib/pasarguard/zomorod/admin-subscriptions.json" "${BACKUP_DIR}/admin-subscriptions.json"
+  log "backing up existing Zomorod/PasarGuard files"
+  if [[ -f "${TEMPLATE_FILE}" ]]; then
+    cp -a "${TEMPLATE_FILE}" "${BACKUP_DIR}/subscription-index.html" || warn "could not back up subscription template; continuing update"
+  fi
+  if [[ -f "${ENV_FILE}" ]]; then
+    cp -a "${ENV_FILE}" "${BACKUP_DIR}/pasarguard.env" || warn "could not back up PasarGuard .env; continuing update"
+  fi
+  if [[ -f "/var/lib/pasarguard/zomorod/admin-subscriptions.json" ]]; then
+    cp -a "/var/lib/pasarguard/zomorod/admin-subscriptions.json" "${BACKUP_DIR}/admin-subscriptions.json" || warn "could not back up namespace state; continuing update"
+  fi
+  log "backup stage complete"
   return 0
 }
 
@@ -146,6 +163,7 @@ install_template() {
 
 install_plugin_files() {
   local file
+  log "downloading Zomorod plugin and backend files"
   for file in plugin/zomorod-special.js plugin/zomorod-runtime.js plugin/integrate-dashboard.sh backend/zomorod_admin_subscriptions.py; do
     download "$(raw_url "${file}")" "${TMP_DIR}/$(basename "${file}")" || fail "could not download ${file}"
   done
@@ -163,6 +181,7 @@ install_cli() {
 }
 
 configure_pasarguard() {
+  log "checking PasarGuard template configuration"
   mkdir -p "$(dirname "${ENV_FILE}")"; touch "${ENV_FILE}"
   python3 - "${ENV_FILE}" <<'PY'
 from pathlib import Path
@@ -178,6 +197,7 @@ PY
 
 install_systemd_units() {
   command -v systemctl >/dev/null 2>&1 || { warn "systemd not detected; integration will run once only"; return 0; }
+  log "updating Zomorod self-healing integration units"
   local unit
   for unit in zomorod-integrator.service zomorod-integrator.path zomorod-integrator.timer; do
     download "$(raw_url "systemd/${unit}")" "${TMP_DIR}/${unit}" || fail "could not download systemd/${unit}"
