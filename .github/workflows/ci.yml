@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
@@ -134,3 +134,26 @@ jobs:
           test -s systemd/zomorod-integrator.service
           test -s systemd/zomorod-integrator.path
           test -s systemd/zomorod-integrator.timer
+
+      - name: Refresh installer prebuilt from validated build
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          gzip -9 -n -c dist/index.html > "$tmp/index.html.gz"
+          rm -f prebuilt/index.html.gz.part-*
+          split -b 50000 -d -a 2 "$tmp/index.html.gz" prebuilt/index.html.gz.part-
+          count="$(find prebuilt -maxdepth 1 -type f -name 'index.html.gz.part-*' | wc -l | tr -d ' ')"
+          printf '%s\n' "$count" > prebuilt/index.parts
+
+          if git diff --quiet -- prebuilt; then
+            echo 'Prebuilt already matches validated build.'
+            exit 0
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add prebuilt
+          git commit -m 'build: refresh installer prebuilt from validated template [skip ci]'
+          git push origin HEAD:main
