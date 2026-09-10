@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { QRCodeCanvas } from 'qrcode.react';
+import { QRCodeSVG } from 'qrcode.react';
 import { Copy, Check, ScanQrCode, AlertCircle, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -44,24 +44,9 @@ export const QRModal = memo(({ link, open, onOpenChange }: QRModalProps) => {
     setWireGuardQrMode('config');
   }, [link.raw]);
 
-  // Check if data is too long for QR code (max ~2950 characters for level L)
-  const canGenerateQR = useMemo(() => {
-    return qrValue.length <= 2900; // Safe limit for QR level L
-  }, [qrValue]);
-
-  // Calculate QR size based on viewport
-  const qrSize = useMemo(() => {
-    if (typeof window !== 'undefined') {
-      const maxSize = 340;
-      const minSize = 240;
-      const viewportWidth = window.innerWidth;
-      // Use 95vw - padding (modal padding + qr container padding)
-      const totalPadding = viewportWidth < 640 ? 50 : 70; // Reduced padding
-      const mobileSize = Math.min(viewportWidth * 0.95 - totalPadding, maxSize);
-      return Math.max(minSize, mobileSize);
-    }
-    return 280; // Default for SSR
-  }, []);
+  // Keep a conservative ceiling for error-correction level L. Very large WG
+  // configs should use copy/download instead of producing an unreadable QR.
+  const canGenerateQR = useMemo(() => qrValue.length <= 2900, [qrValue]);
 
   const handleCopy = useCallback(() => {
     copyToClipboard(preparedCopyContent.content, `${link.raw}:config`);
@@ -73,10 +58,7 @@ export const QRModal = memo(({ link, open, onOpenChange }: QRModalProps) => {
   }, [copyToClipboard, link.raw, preparedCopyContent.content]);
 
   const handleDownloadWireGuard = useCallback(() => {
-    if (!wireGuardDownload) {
-      return;
-    }
-
+    if (!wireGuardDownload) return;
     try {
       downloadTextFile(wireGuardDownload.content, wireGuardDownload.fileName);
       toast.success(t('configActions.downloadStarted'));
@@ -96,22 +78,23 @@ export const QRModal = memo(({ link, open, onOpenChange }: QRModalProps) => {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[95vw] sm:max-w-[460px] max-h-[90dvh] overflow-y-auto overflow-x-hidden p-4 sm:p-6" dir={dir}>
-        <DialogHeader>
+      <DialogContent
+        className="w-[calc(100vw-1rem)] max-w-[440px] max-h-[calc(100dvh-1rem)] overflow-y-auto overflow-x-hidden overscroll-contain rounded-[24px] p-4 sm:p-5"
+        dir={dir}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+      >
+        <DialogHeader className="pr-8 sm:pr-9">
           <DialogTitle>
             <div className="flex items-center gap-2">
-              <ScanQrCode className="w-4 h-4 sm:w-5 sm:h-5" />
+              <ScanQrCode className="size-5" aria-hidden="true" />
               <span className="text-base">{t('qr.title')}</span>
             </div>
           </DialogTitle>
         </DialogHeader>
-        
-        <div className="flex flex-col items-center gap-3 sm:gap-4 py-1 sm:py-2 overflow-hidden">
+
+        <div className="flex flex-col items-center gap-3 py-1 sm:gap-4">
           {wireGuardDownload && (
-            <div
-              className="ios-segmented-control"
-              aria-label={t('qr.format')}
-            >
+            <div className="ios-segmented-control" aria-label={t('qr.format')}>
               <Button
                 type="button"
                 size="sm"
@@ -133,90 +116,53 @@ export const QRModal = memo(({ link, open, onOpenChange }: QRModalProps) => {
             </div>
           )}
 
-          {/* QR Code Display */}
           {canGenerateQR ? (
-            <div className="flex justify-center items-center p-3 bg-white rounded-2xl shadow-sm w-full max-w-full">
-              <QRCodeCanvas 
-                value={qrValue}
-                size={qrSize}
-                level="L"
-                className="w-auto h-auto max-w-full"
-                style={{ maxWidth: '100%', height: 'auto' }}
-              />
+            <div className="w-full rounded-[22px] border border-black/5 bg-white p-3 shadow-sm sm:p-4">
+              <div className="mx-auto aspect-square w-full max-w-[320px] overflow-hidden rounded-xl bg-white">
+                <QRCodeSVG
+                  value={qrValue}
+                  size={320}
+                  level="L"
+                  marginSize={2}
+                  bgColor="#ffffff"
+                  fgColor="#071c16"
+                  className="block h-auto w-full"
+                  style={{ width: '100%', height: 'auto', maxWidth: '320px' }}
+                  role="img"
+                  aria-label={`${t('qr.title')} - ${link.name}`}
+                />
+              </div>
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center p-6 sm:p-8 bg-muted/30 rounded-lg sm:rounded-xl w-full">
-              <AlertCircle className="w-10 h-10 sm:w-12 sm:h-12 text-yellow-500 mb-2 sm:mb-3" />
-              <p className="text-sm text-center text-muted-foreground mb-1 sm:mb-2 font-medium">
-                {t('qr.tooLong')}
-              </p>
-              <p className="text-sm text-center text-muted-foreground">
-                {t('qr.useCopy')}
-              </p>
+            <div className="flex w-full flex-col items-center justify-center rounded-2xl bg-muted/30 p-6 sm:p-8">
+              <AlertCircle className="mb-3 size-11 text-yellow-500" aria-hidden="true" />
+              <p className="mb-1 text-center text-sm font-medium text-muted-foreground">{t('qr.tooLong')}</p>
+              <p className="text-center text-sm text-muted-foreground">{t('qr.useCopy')}</p>
             </div>
           )}
 
-          {/* Link Info */}
-          <div className="w-full min-h-12 px-3 rounded-xl bg-muted/60 flex items-center gap-2 text-sm">
-            <div className="ios-protocol-badge">
-              {protocolBadge}
-            </div>
-            {link.emoji && (
-              <span className="text-sm sm:text-base">{link.emoji}</span>
-            )}
-            <span dir="ltr" className={cn("page-item-title flex-1 truncate", dir === 'rtl' ? 'text-right' : 'text-left')}>
+          <div className="flex min-h-12 w-full items-center gap-2 rounded-xl bg-muted/60 px-3 text-sm">
+            <div className="ios-protocol-badge">{protocolBadge}</div>
+            {link.emoji && <span className="text-base">{link.emoji}</span>}
+            <span dir="ltr" className={cn('page-item-title min-w-0 flex-1 truncate', dir === 'rtl' ? 'text-right' : 'text-left')}>
               {link.name}
             </span>
           </div>
 
           <div className={`grid w-full grid-cols-1 gap-2 ${isWireGuard ? 'sm:grid-cols-2' : ''}`}>
-            <Button
-              onClick={handleCopy}
-              size="sm"
-              className={`w-full gap-2 h-10 text-sm ${isWireGuard ? '' : 'sm:col-span-1'}`}
-            >
-              {copiedConfig ? (
-                <>
-                  <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  {t('qr.copied')}
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  {link.protocol === 'unknown' ? t('qr.copy') : t('configActions.copyConfig')}
-                </>
-              )}
+            <Button onClick={handleCopy} size="sm" className="h-10 w-full gap-2 text-sm">
+              {copiedConfig ? <><Check className="size-4" />{t('qr.copied')}</> : <><Copy className="size-4" />{link.protocol === 'unknown' ? t('qr.copy') : t('configActions.copyConfig')}</>}
             </Button>
 
             {supportsBase64Copy && (
-              <Button
-                onClick={handleCopyBase64}
-                size="sm"
-                variant={copiedBase64 ? 'default' : 'outline'}
-                className="w-full gap-2 h-10 text-sm"
-              >
-                {copiedBase64 ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    {t('qr.copied')}
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    {t('configActions.copyBase64')}
-                  </>
-                )}
+              <Button onClick={handleCopyBase64} size="sm" variant={copiedBase64 ? 'default' : 'outline'} className="h-10 w-full gap-2 text-sm">
+                {copiedBase64 ? <><Check className="size-4" />{t('qr.copied')}</> : <><Copy className="size-4" />{t('configActions.copyBase64')}</>}
               </Button>
             )}
 
             {wireGuardDownload && (
-              <Button
-                onClick={handleDownloadWireGuard}
-                size="sm"
-                variant="outline"
-                className="w-full gap-2 h-10 text-sm sm:col-span-2"
-              >
-                <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <Button onClick={handleDownloadWireGuard} size="sm" variant="outline" className="h-10 w-full gap-2 text-sm sm:col-span-2">
+                <Download className="size-4" />
                 {t('configActions.downloadWireGuard')}
               </Button>
             )}
