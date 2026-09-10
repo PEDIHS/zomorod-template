@@ -13,6 +13,7 @@ ENV_FILE="${PASARGUARD_ROOT}/.env"
 TMP_DIR=""
 BACKUP_DIR=""
 SOURCE_REF="main"
+MODE="install"
 
 usage() {
   cat <<'EOF'
@@ -20,6 +21,10 @@ Zomorod Template + Special Plugin installer for PasarGuard
 
 Usage:
   install.sh [--lang fa|en|ru|zh] [--version latest|<tag>]
+  install.sh --update [--lang fa|en|ru|zh]
+
+After the first install:
+  sudo zomorod update
 
 Safety:
   The installer never restarts, recreates, stops, or starts PasarGuard/Docker services.
@@ -45,6 +50,7 @@ trap cleanup EXIT
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    update|--update) MODE="update"; VERSION="latest"; SOURCE_REF="main"; shift ;;
     --lang) [[ $# -ge 2 ]] || fail "--lang needs a value"; LANG_CODE="$2"; shift 2 ;;
     --version) [[ $# -ge 2 ]] || fail "--version needs a value"; VERSION="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -63,14 +69,14 @@ BACKUP_DIR="${ZOMOROD_ROOT}/backups/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "${BACKUP_DIR}" "${ZOMOROD_ROOT}/plugin" "${ZOMOROD_ROOT}/backend" "${TEMPLATE_DIR}" "/var/lib/pasarguard/zomorod"
 
 if command -v curl >/dev/null 2>&1; then
-  download() { curl -fsSL --connect-timeout 20 --retry 3 --retry-delay 2 "$1" -o "$2"; }
+  download() { curl -fL --show-error --connect-timeout 20 --max-time 120 --retry 3 --retry-delay 2 -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' "$1" -o "$2"; }
 elif command -v wget >/dev/null 2>&1; then
   download() { wget -q --timeout=20 --tries=3 "$1" -O "$2"; }
 else
   fail "curl or wget is required"
 fi
 
-raw_url() { printf 'https://raw.githubusercontent.com/%s/%s/%s/%s' "${REPO_OWNER}" "${REPO_NAME}" "${SOURCE_REF}" "$1"; }
+raw_url() { printf 'https://raw.githubusercontent.com/%s/%s/%s/%s?zomorod=%s' "${REPO_OWNER}" "${REPO_NAME}" "${SOURCE_REF}" "$1" "$(date +%s)"; }
 
 backup_existing() {
   [[ -f "${TEMPLATE_FILE}" ]] && cp -a "${TEMPLATE_FILE}" "${BACKUP_DIR}/subscription-index.html"
@@ -148,6 +154,14 @@ install_plugin_files() {
   install -m 0644 "${TMP_DIR}/zomorod_admin_subscriptions.py" "${ZOMOROD_ROOT}/backend/zomorod_admin_subscriptions.py"
 }
 
+
+install_cli() {
+  log "installing Zomorod update command"
+  download "$(raw_url cli/zomorod)" "${TMP_DIR}/zomorod-cli" || fail "could not download cli/zomorod"
+  chmod +x "${TMP_DIR}/zomorod-cli"
+  install -m 0755 "${TMP_DIR}/zomorod-cli" /usr/local/bin/zomorod
+}
+
 configure_pasarguard() {
   mkdir -p "$(dirname "${ENV_FILE}")"; touch "${ENV_FILE}"
   python3 - "${ENV_FILE}" <<'PY'
@@ -175,9 +189,11 @@ install_systemd_units() {
 }
 
 main() {
+  if [[ "${MODE}" == "update" ]]; then log "updating Zomorod from latest main (cache bypass enabled)"; else log "installing Zomorod"; fi
   backup_existing
   install_template
   install_plugin_files
+  install_cli
   configure_pasarguard
   install_systemd_units
 
@@ -194,6 +210,7 @@ main() {
   printf '  • Settings tab:          Zomorod · Special (Owner only)\n'
   printf '  • Theme storage:         isolated as zomorod-theme\n'
   printf '  • Service lifecycle:     untouched (no restart / recreate / stop / start)\n'
+  printf '  • Update command:        sudo zomorod update\n'
   printf '\nOwner-only /sub/<admin>/<subscription-hash> routes become active after the next normal PasarGuard process start.\n'
   printf 'Open PasarGuard → Settings → Zomorod to manage namespaces and preferences.\n'
 }

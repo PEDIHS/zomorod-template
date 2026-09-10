@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.3.0';
+  const VERSION = '4.4.0';
   const HEADER_PREFIX = 'x-zomorod-';
   const NAV_ID = 'zomorod-special-nav';
   const ROOT_ID = 'zomorod-special-root';
@@ -136,6 +136,16 @@
   const value = (id) => String(field(id)?.value ?? '').trim();
   const checked = (id) => Boolean(field(id)?.checked);
 
+  function currentPanelPath() {
+    const hashPath = String(location.hash || '').replace(/^#/, '').split('?')[0];
+    if (hashPath.startsWith('/')) return hashPath;
+    return location.pathname || '/';
+  }
+
+  function isSettingsRoute() {
+    return /^\/settings(?:\/|$)/.test(currentPanelPath());
+  }
+
   async function api(path, options = {}) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
@@ -183,6 +193,7 @@
   }
 
   function findSettingsTabBar() {
+    if (!isSettingsRoute()) return null;
     const preferred = document.querySelector('.scrollbar-hide.flex.overflow-x-auto.border-b');
     if (preferred instanceof HTMLElement && preferred.querySelectorAll(':scope > button').length >= 2) return preferred;
     return [...document.querySelectorAll('.scrollbar-hide, [class*="overflow-x-auto"][class*="border-b"]')].find((node) => node instanceof HTMLElement && node.querySelectorAll(':scope > button').length >= 2) || null;
@@ -446,7 +457,7 @@
   }
 
   function ensureTab() {
-    if (!ownerResolved || !ownerAllowed) return;
+    if (!isSettingsRoute() || !ownerResolved || !ownerAllowed) return;
     const tabBar = findSettingsTabBar();
     if (!tabBar) return;
     if (!tabBar.dataset.zomorodBound) {
@@ -475,6 +486,12 @@
 
   function maintain() {
     maintainQueued = false;
+    if (!isSettingsRoute()) {
+      active = false;
+      document.getElementById(ROOT_ID)?.remove();
+      document.getElementById(NAV_ID)?.remove();
+      return;
+    }
     if (!ownerResolved || !ownerAllowed) {
       removeOwnerOnlyUi();
       return;
@@ -512,6 +529,7 @@
   }
 
   window.addEventListener('popstate', () => { if (active) deactivate(); scheduleMaintain(); });
+  window.addEventListener('hashchange', () => { if (!isSettingsRoute()) active = false; scheduleMaintain(); });
   const observer = new MutationObserver(scheduleMaintain);
   observer.observe(document.documentElement, { subtree: true, childList: true });
   if (document.readyState === 'loading') {

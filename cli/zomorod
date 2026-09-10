@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+REPO="PEDIHS/zomorod-template"
+RAW="https://raw.githubusercontent.com/${REPO}/main/install.sh"
+
+usage() {
+  cat <<'EOF'
+Zomorod command
+
+Usage:
+  sudo zomorod update          Download and apply the newest Zomorod version
+  zomorod version              Show locally installed plugin version
+  zomorod status               Show installed files and integration status
+EOF
+}
+
+run_root() {
+  if [[ ${EUID} -eq 0 ]]; then "$@"; else sudo "$@"; fi
+}
+
+case "${1:-}" in
+  update)
+    shift
+    tmp="$(mktemp /tmp/zomorod-update.XXXXXX.sh)"
+    trap 'rm -f "$tmp"' EXIT
+    stamp="$(date +%s)"
+    echo "[Zomorod] checking latest main..."
+    curl -fL --show-error --connect-timeout 20 --max-time 120 --retry 3 --retry-delay 2 \
+      -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+      "${RAW}?update=${stamp}" -o "$tmp"
+    grep -q 'Zomorod Template + Special Plugin installer' "$tmp" || { echo '[Zomorod] invalid installer received' >&2; exit 1; }
+    echo "[Zomorod] latest installer downloaded; applying update..."
+    run_root bash "$tmp" --update "$@"
+    echo "[Zomorod] update finished. Close old PasarGuard tabs and reopen Settings."
+    ;;
+  version)
+    file="/opt/zomorod/plugin/zomorod-special.js"
+    [[ -f "$file" ]] || { echo 'Zomorod is not installed'; exit 1; }
+    grep -m1 "const VERSION" "$file" | sed -E "s/.*'([^']+)'.*/Zomorod \\1/"
+    ;;
+  status)
+    echo "Zomorod root: /opt/zomorod"
+    test -s /opt/zomorod/plugin/zomorod-special.js && echo 'Plugin: installed' || echo 'Plugin: missing'
+    test -s /opt/zomorod/backend/zomorod_admin_subscriptions.py && echo 'Admin namespaces backend: installed' || echo 'Admin namespaces backend: missing'
+    test -s /var/lib/pasarguard/templates/subscription/index.html && echo 'Subscription template: installed' || echo 'Subscription template: missing'
+    if command -v systemctl >/dev/null 2>&1; then
+      systemctl is-enabled zomorod-integrator.timer >/dev/null 2>&1 && echo 'Self-heal timer: enabled' || echo 'Self-heal timer: not enabled'
+    fi
+    ;;
+  -h|--help|help|'') usage ;;
+  *) echo "Unknown command: $1" >&2; usage >&2; exit 2 ;;
+esac
