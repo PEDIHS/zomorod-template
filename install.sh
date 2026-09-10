@@ -220,7 +220,7 @@ safe_restart_pasarguard() {
   pasarguard_cli="$(command -v pasarguard)" || true
   if [[ -z "${pasarguard_cli}" || ! -x "${pasarguard_cli}" ]]; then
     warn "official pasarguard CLI was not found; no raw Docker fallback will be used"
-    warn "run 'pasarguard restart' later after the CLI is available to activate Python routes"
+    warn "run the official PasarGuard panel restart command later to activate Python routes"
     return 0
   fi
 
