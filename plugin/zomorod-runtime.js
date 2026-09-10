@@ -2,8 +2,10 @@
   'use strict';
 
   const PREFIX = 'x-zomorod-';
+  const SUPPORT_ID = 'zomorod-support-link';
   const DEFAULTS = {
     storeName: 'زمرد',
+    supportId: '',
     showConfigs: false,
     showWireGuard: false,
     showPing: true,
@@ -62,6 +64,26 @@
       text-shadow:0 0 18px rgba(16,185,129,.12);
     }
     html.dark .zomorod-special-announcement h2{color:#6ee7b7!important}
+    #${SUPPORT_ID}{
+      min-height:34px;
+      display:inline-flex;
+      align-items:center;
+      gap:.4rem;
+      padding:.42rem .62rem;
+      border-radius:999px;
+      border:1px solid rgba(16,185,129,.20);
+      color:inherit;
+      background:linear-gradient(135deg,rgba(16,185,129,.08),rgba(184,134,11,.08));
+      font-size:.72rem;
+      font-weight:750;
+      text-decoration:none;
+      white-space:nowrap;
+      transition:transform .16s ease,border-color .16s ease,background .16s ease;
+    }
+    #${SUPPORT_ID}:hover{transform:translateY(-1px);border-color:rgba(16,185,129,.38);background:linear-gradient(135deg,rgba(16,185,129,.12),rgba(184,134,11,.11))}
+    #${SUPPORT_ID} .zomorod-support-gem{color:#059669;font-size:.78rem;line-height:1}
+    #${SUPPORT_ID} .zomorod-support-label{max-width:128px;overflow:hidden;text-overflow:ellipsis}
+    @media(max-width:560px){#${SUPPORT_ID}{padding:.42rem .52rem}#${SUPPORT_ID} .zomorod-support-value{display:none}}
     @keyframes zomorodAnnSweep{
       0%,12%{left:-52%;opacity:0}
       22%{opacity:1}
@@ -109,10 +131,34 @@
     }
   };
 
+  const supportLabelFromUrl = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    try {
+      const parsed = new URL(raw, window.location.origin);
+      if (['t.me', 'www.t.me', 'telegram.me', 'www.telegram.me'].includes(parsed.hostname.toLowerCase())) {
+        const path = parsed.pathname.replace(/^\/+|\/+$/g, '');
+        if (path && !path.includes('/') && !path.startsWith('+')) return `@${path}`;
+      }
+    } catch (_) {}
+    return raw;
+  };
+
+  const supportHref = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const username = raw.startsWith('@') ? raw.slice(1) : raw;
+    if (/^[A-Za-z0-9_]{4,64}$/.test(username)) return `https://t.me/${username}`;
+    if (/^(?:https?:\/\/|tg:\/\/)/i.test(raw)) return raw;
+    return '';
+  };
+
   const parseConfig = (raw) => {
     const headers = normalizeHeaders(raw?.headers);
+    const encodedSupport = decodeUtf8Base64(header(headers, 'support-id-b64').trim());
     return {
       storeName: decodeUtf8Base64(header(headers, 'store-name-b64').trim()) || header(headers, 'store-name').trim() || DEFAULTS.storeName,
+      supportId: encodedSupport || supportLabelFromUrl(headers['support-url']) || DEFAULTS.supportId,
       showConfigs: bool(header(headers, 'show-configs'), DEFAULTS.showConfigs),
       showWireGuard: bool(header(headers, 'show-wireguard'), DEFAULTS.showWireGuard),
       showPing: bool(header(headers, 'show-ping'), DEFAULTS.showPing),
@@ -158,6 +204,35 @@
       if (label && label.textContent !== name) label.textContent = name;
       if (brand.getAttribute('aria-label') !== name) brand.setAttribute('aria-label', name);
     });
+  };
+
+  const applySupport = (supportId) => {
+    const href = supportHref(supportId);
+    let link = document.getElementById(SUPPORT_ID);
+    if (!href) {
+      if (link) link.remove();
+      return;
+    }
+
+    const controls = document.querySelector('.treasury-navigation .ios-container .flex.shrink-0')
+      || document.querySelector('.treasury-navigation .ios-container > div:last-child');
+    if (!(controls instanceof HTMLElement)) return;
+
+    if (!(link instanceof HTMLAnchorElement)) {
+      link = document.createElement('a');
+      link.id = SUPPORT_ID;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.innerHTML = '<span class="zomorod-support-gem">◆</span><span class="zomorod-support-label">پشتیبانی</span><span class="zomorod-support-value"></span>';
+      controls.insertBefore(link, controls.firstChild);
+    }
+
+    if (link.href !== new URL(href, window.location.origin).href) link.href = href;
+    const valueNode = link.querySelector('.zomorod-support-value');
+    const label = supportLabelFromUrl(supportId);
+    if (valueNode && valueNode.textContent !== label) valueNode.textContent = label;
+    const title = `پشتیبانی ${label}`.trim();
+    if (link.title !== title) link.title = title;
   };
 
   const isWireGuardRow = (row) => {
@@ -237,6 +312,7 @@
       node.removeAttribute('data-zomorod-original-display');
     });
     document.querySelectorAll('.zomorod-special-announcement').forEach((node) => node.classList.remove('zomorod-special-announcement'));
+    document.getElementById(SUPPORT_ID)?.remove();
     document.documentElement.removeAttribute('data-zomorod');
   };
 
@@ -246,6 +322,7 @@
 
     const config = state.config;
     updateBrand(config.storeName);
+    applySupport(config.supportId);
     applyConnections(config);
     applyPing(config.showPing);
     applyApps(config.showApps);
