@@ -1,0 +1,40 @@
+name: Zomorod maintenance patch
+
+on:
+  push:
+    paths:
+      - '.github/patches/zomorod-v44.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply v4.4 maintenance patch
+        run: python3 .github/patches/zomorod-v44.py
+      - name: Validate changed files
+        run: |
+          bash -n install.sh
+          bash -n cli/zomorod
+          node --check plugin/zomorod-special.js
+          grep -q "const VERSION = '4.4.0'" plugin/zomorod-special.js
+          grep -q 'isSettingsRoute' plugin/zomorod-special.js
+          grep -q 'zomorod update' install.sh
+      - name: Commit patch
+        run: |
+          if git diff --quiet; then
+            echo 'No changes needed'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add install.sh plugin/zomorod-special.js cli/zomorod
+          git commit -m 'fix: reliable updater and settings-only Zomorod tab [skip ci]'
+          git push origin HEAD:main
