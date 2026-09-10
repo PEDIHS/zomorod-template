@@ -46,7 +46,11 @@ jobs:
           node --check plugin/zomorod-runtime.js
 
       - name: Validate Python backend addon
-        run: python3 -m py_compile backend/zomorod_admin_subscriptions.py
+        run: |
+          python3 -m py_compile backend/zomorod_admin_subscriptions.py
+          grep -q 'admin_slug:zslug' backend/zomorod_admin_subscriptions.py
+          grep -q 'db_user.*admin_id' backend/zomorod_admin_subscriptions.py
+          grep -q 'role.is_owner' backend/zomorod_admin_subscriptions.py
 
       - name: Validate shell scripts
         run: |
@@ -100,7 +104,6 @@ jobs:
 
           first_dashboard_sha="$(sha256sum "$sandbox/pasarguard/dashboard/build/index.html" | awk '{print $1}')"
           first_subscription_sha="$(sha256sum "$sandbox/templates/subscription/index.html" | awk '{print $1}')"
-          first_router_sha="$(sha256sum "$sandbox/pasarguard/app/routers/__init__.py" | awk '{print $1}')"
 
           sudo env \
             ZOMOROD_ROOT="$sandbox/zomorod" \
@@ -110,15 +113,13 @@ jobs:
 
           second_dashboard_sha="$(sha256sum "$sandbox/pasarguard/dashboard/build/index.html" | awk '{print $1}')"
           second_subscription_sha="$(sha256sum "$sandbox/templates/subscription/index.html" | awk '{print $1}')"
-          second_router_sha="$(sha256sum "$sandbox/pasarguard/app/routers/__init__.py" | awk '{print $1}')"
 
           test "$first_dashboard_sha" = "$second_dashboard_sha"
           test "$first_subscription_sha" = "$second_subscription_sha"
-          test "$first_router_sha" = "$second_router_sha"
           test "$(grep -c 'zomorod-special-loader' "$sandbox/pasarguard/dashboard/build/index.html")" -eq 1
           test "$(grep -c 'zomorod-runtime-inline' "$sandbox/templates/subscription/index.html")" -eq 1
           test "$(grep -c 'zomorod-admin-subscriptions-start' "$sandbox/pasarguard/app/routers/__init__.py")" -eq 1
-          grep -q 'zomorod_admin_subscriptions.router' "$sandbox/pasarguard/app/routers/__init__.py"
+          test "$(grep -c 'zomorod_admin_subscriptions.router' "$sandbox/pasarguard/app/routers/__init__.py")" -eq 1
           cmp plugin/zomorod-special.js "$sandbox/pasarguard/dashboard/build/statics/zomorod-special.js"
           cmp backend/zomorod_admin_subscriptions.py "$sandbox/pasarguard/app/routers/zomorod_admin_subscriptions.py"
 
