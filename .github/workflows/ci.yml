@@ -32,10 +32,21 @@ jobs:
         env:
           VITE_FALLBACK_LANGUAGE: fa
 
+      - name: Upload built subscription template
+        uses: actions/upload-artifact@v4
+        with:
+          name: zomorod-built-template
+          path: dist/index.html
+          if-no-files-found: error
+          retention-days: 3
+
       - name: Validate browser integration JavaScript
         run: |
           node --check plugin/zomorod-special.js
           node --check plugin/zomorod-runtime.js
+
+      - name: Validate Python backend addon
+        run: python3 -m py_compile backend/zomorod_admin_subscriptions.py
 
       - name: Validate shell scripts
         run: |
@@ -60,17 +71,26 @@ jobs:
           trap 'rm -rf "$sandbox"' EXIT
 
           mkdir -p "$sandbox/pasarguard/dashboard/build/statics"
-          mkdir -p "$sandbox/zomorod/plugin"
+          mkdir -p "$sandbox/pasarguard/app/routers"
+          mkdir -p "$sandbox/zomorod/plugin" "$sandbox/zomorod/backend"
           mkdir -p "$sandbox/templates/subscription"
 
           cp plugin/zomorod-special.js "$sandbox/zomorod/plugin/zomorod-special.js"
           cp plugin/zomorod-runtime.js "$sandbox/zomorod/plugin/zomorod-runtime.js"
           cp plugin/integrate-dashboard.sh "$sandbox/zomorod/plugin/integrate-dashboard.sh"
+          cp backend/zomorod_admin_subscriptions.py "$sandbox/zomorod/backend/zomorod_admin_subscriptions.py"
           chmod +x "$sandbox/zomorod/plugin/integrate-dashboard.sh"
 
-          printf '<!doctype html><html><body>dashboard</body></html>\n' > "$sandbox/pasarguard/dashboard/build/index.html"
+          printf '<!doctype html><html><head></head><body>dashboard</body></html>\n' > "$sandbox/pasarguard/dashboard/build/index.html"
           cp "$sandbox/pasarguard/dashboard/build/index.html" "$sandbox/pasarguard/dashboard/build/404.html"
           printf '<!doctype html><html><body>subscription</body></html>\n' > "$sandbox/templates/subscription/index.html"
+          cat > "$sandbox/pasarguard/app/routers/__init__.py" <<'PY'
+          from fastapi import APIRouter
+          api_router = APIRouter()
+          routers = []
+          for router in routers:
+              api_router.include_router(router)
+          PY
 
           sudo env \
             ZOMOROD_ROOT="$sandbox/zomorod" \
@@ -80,6 +100,7 @@ jobs:
 
           first_dashboard_sha="$(sha256sum "$sandbox/pasarguard/dashboard/build/index.html" | awk '{print $1}')"
           first_subscription_sha="$(sha256sum "$sandbox/templates/subscription/index.html" | awk '{print $1}')"
+          first_router_sha="$(sha256sum "$sandbox/pasarguard/app/routers/__init__.py" | awk '{print $1}')"
 
           sudo env \
             ZOMOROD_ROOT="$sandbox/zomorod" \
@@ -89,12 +110,17 @@ jobs:
 
           second_dashboard_sha="$(sha256sum "$sandbox/pasarguard/dashboard/build/index.html" | awk '{print $1}')"
           second_subscription_sha="$(sha256sum "$sandbox/templates/subscription/index.html" | awk '{print $1}')"
+          second_router_sha="$(sha256sum "$sandbox/pasarguard/app/routers/__init__.py" | awk '{print $1}')"
 
           test "$first_dashboard_sha" = "$second_dashboard_sha"
           test "$first_subscription_sha" = "$second_subscription_sha"
+          test "$first_router_sha" = "$second_router_sha"
           test "$(grep -c 'zomorod-special-loader' "$sandbox/pasarguard/dashboard/build/index.html")" -eq 1
           test "$(grep -c 'zomorod-runtime-inline' "$sandbox/templates/subscription/index.html")" -eq 1
+          test "$(grep -c 'zomorod-admin-subscriptions-start' "$sandbox/pasarguard/app/routers/__init__.py")" -eq 1
+          grep -q 'zomorod_admin_subscriptions.router' "$sandbox/pasarguard/app/routers/__init__.py"
           cmp plugin/zomorod-special.js "$sandbox/pasarguard/dashboard/build/statics/zomorod-special.js"
+          cmp backend/zomorod_admin_subscriptions.py "$sandbox/pasarguard/app/routers/zomorod_admin_subscriptions.py"
 
       - name: Validate installer help
         run: bash install.sh --help >/dev/null
@@ -104,6 +130,7 @@ jobs:
           test -s dist/index.html
           test -s plugin/zomorod-special.js
           test -s plugin/zomorod-runtime.js
+          test -s backend/zomorod_admin_subscriptions.py
           test -s systemd/zomorod-integrator.service
           test -s systemd/zomorod-integrator.path
           test -s systemd/zomorod-integrator.timer
