@@ -199,7 +199,7 @@ PY
 
 install_systemd_units() {
   command -v systemctl >/dev/null 2>&1 || { warn "systemd not detected; integration will run once only"; return 0; }
-  log "updating Zomorod self-healing integration units"
+  log "updating Zomorod host-level persistence guard"
   local unit
   for unit in zomorod-integrator.service zomorod-integrator.path zomorod-integrator.timer; do
     download "$(raw_url "systemd/${unit}")" "${TMP_DIR}/${unit}" || fail "could not download systemd/${unit}"
@@ -207,7 +207,13 @@ install_systemd_units() {
   done
   systemctl daemon-reload
   systemctl enable --now zomorod-integrator.path >/dev/null 2>&1 || warn "path watcher could not be enabled"
-  systemctl enable --now zomorod-integrator.timer >/dev/null 2>&1 || warn "fallback timer could not be enabled"
+  systemctl enable zomorod-integrator.timer >/dev/null 2>&1 || warn "fallback timer could not be enabled"
+  systemctl restart zomorod-integrator.timer >/dev/null 2>&1 || warn "fallback timer could not be restarted"
+  # Start the persistent Docker lifecycle listener before PasarGuard is restarted.
+  # It lives on the host, so it survives panel container replacement and can
+  # re-inject Zomorod (and HS-PG when installed) into the newly created container.
+  systemctl enable zomorod-integrator.service >/dev/null 2>&1 || true
+  systemctl restart zomorod-integrator.service >/dev/null 2>&1 || warn "persistence guard could not be started immediately"
 }
 
 safe_restart_pasarguard() {
@@ -243,14 +249,22 @@ safe_restart_pasarguard() {
 
   log "re-applying Zomorod integration after the safe panel restart"
   for attempt in $(seq 1 15); do
-    if "${ZOMOROD_ROOT}/plugin/integrate-dashboard.sh" >/dev/null 2>&1; then
-      log "Zomorod integration is active after PasarGuard restart"
+    "${ZOMOROD_ROOT}/plugin/integrate-dashboard.sh" >/dev/null 2>&1 || true
+    if [[ -x /opt/hs-pg/plugin/integrate-dashboard.sh ]]; then
+      /opt/hs-pg/plugin/integrate-dashboard.sh >/dev/null 2>&1 || true
+    fi
+    if command -v systemctl >/dev/null 2>&1; then
+      systemctl is-active --quiet zomorod-integrator.service && {
+        log "host persistence guard is active after PasarGuard restart"
+        return 0
+      }
+    else
       return 0
     fi
     sleep 1
   done
 
-  warn "PasarGuard restarted, but Zomorod post-restart integration is still pending; the self-heal timer will retry automatically"
+  warn "PasarGuard restarted; integration guard will continue reconciling in the background"
   return 0
 }
 
@@ -265,6 +279,9 @@ main() {
 
   log "activating Zomorod integration before the panel restart"
   if ! "${ZOMOROD_ROOT}/plugin/integrate-dashboard.sh"; then warn "initial live integration is pending and will be retried automatically"; fi
+  if [[ -x /opt/hs-pg/plugin/integrate-dashboard.sh ]]; then
+    /opt/hs-pg/plugin/integrate-dashboard.sh >/dev/null 2>&1 || warn "HS-PG reintegration is pending; host guard will retry it"
+  fi
 
   safe_restart_pasarguard
 
@@ -275,8 +292,9 @@ main() {
   printf '  • Backend addon:         %s\n' "${ZOMOROD_ROOT}/backend/zomorod_admin_subscriptions.py"
   printf '  • Namespace data:        %s\n' "/var/lib/pasarguard/zomorod/admin-subscriptions.json"
   printf '  • Backup:                %s\n' "${BACKUP_DIR}"
-  printf '  • Settings tab:          Zomorod · Special (Owner only)\n'
+  printf '  • Settings tab:          Zomorod · Special (Owner + reseller scoped)\n'
   printf '  • Theme storage:         isolated as zomorod-theme\n'
+  printf '  • Persistence:           host systemd guard + Docker start event reconciliation\n'
   printf '  • Service lifecycle:     safe PasarGuard CLI restart only; no raw Docker lifecycle commands\n'
   printf '  • Update command:        sudo zomorod update\n'
   printf '\nOwner-only /sub/<admin>/<subscription-hash> routes are activated by the safe PasarGuard restart when its official CLI is available.\n'
