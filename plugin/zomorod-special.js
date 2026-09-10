@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.2.0';
+  const VERSION = '4.3.0';
   const HEADER_PREFIX = 'x-zomorod-';
   const NAV_ID = 'zomorod-special-nav';
   const ROOT_ID = 'zomorod-special-root';
@@ -9,7 +9,11 @@
 
   let active = false;
   let cachedSettings = null;
+  let cachedNamespaces = null;
+  let namespaceError = null;
   let maintainQueued = false;
+  let ownerResolved = false;
+  let ownerAllowed = false;
 
   const defaults = {
     storeName: 'زمرد',
@@ -30,7 +34,6 @@
     #${NAV_ID} .z-tab-badge{font-size:.56rem;font-weight:800;line-height:1;padding:.2rem .34rem;border-radius:999px;color:#fff;background:linear-gradient(135deg,#047857,#065f46 58%,#9a6a17);box-shadow:0 0 0 1px rgba(184,134,11,.18),0 2px 8px rgba(6,95,70,.15)}
     [data-zomorod-active="1"] > button:not(#${NAV_ID}){border-bottom-color:transparent!important;color:hsl(var(--muted-foreground))!important}
     #${NAV_ID}[data-z-active="true"]{border-bottom-width:2px!important;border-bottom-color:#059669!important;color:hsl(var(--foreground))!important;background:linear-gradient(180deg,transparent,rgba(16,185,129,.05))}
-
     #${ROOT_ID}{width:100%;padding:1rem 1rem 2rem;direction:rtl;color:hsl(var(--foreground));font-family:inherit}
     #${ROOT_ID} *{box-sizing:border-box}
     #${ROOT_ID} .z-hero{position:relative;overflow:hidden;border:1px solid rgba(16,185,129,.22);border-radius:calc(var(--radius,.5rem) + .45rem);padding:1.1rem;background:linear-gradient(135deg,rgba(6,95,70,.12),rgba(4,120,87,.055) 55%,rgba(184,134,11,.10));box-shadow:var(--card-shadow,none)}
@@ -46,7 +49,6 @@
     html.dark #${ROOT_ID} .z-special{color:#e5b84e}
     #${ROOT_ID} .z-subtitle{margin-top:.18rem;font-size:.75rem;color:hsl(var(--muted-foreground));line-height:1.65}
     #${ROOT_ID} .z-version{font-size:.66rem;color:hsl(var(--muted-foreground));border:1px solid hsl(var(--border));background:hsl(var(--background)/.72);padding:.3rem .5rem;border-radius:.45rem}
-
     #${ROOT_ID} .z-content{display:grid;gap:1rem;margin-top:1rem}
     #${ROOT_ID} .z-card{position:relative;border:1px solid hsl(var(--border));border-radius:calc(var(--radius,.5rem) + .25rem);background:hsl(var(--card));padding:1rem;box-shadow:var(--card-shadow,none);overflow:hidden}
     #${ROOT_ID} .z-card.z-accent{border-color:rgba(16,185,129,.20)}
@@ -58,7 +60,6 @@
     #${ROOT_ID} .z-card-note{font-size:.67rem;color:hsl(var(--muted-foreground));line-height:1.6;margin-top:.18rem}
     #${ROOT_ID} .z-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem}
     @media(max-width:760px){#${ROOT_ID}{padding:.85rem .75rem 1.5rem}#${ROOT_ID} .z-grid{grid-template-columns:1fr}}
-
     #${ROOT_ID} .z-field label{display:block;margin-bottom:.35rem;font-size:.74rem;font-weight:700}
     #${ROOT_ID} input[type=text],#${ROOT_ID} input[type=number],#${ROOT_ID} input[type=url],#${ROOT_ID} textarea,#${ROOT_ID} select{width:100%;border:1px solid hsl(var(--border));background:hsl(var(--background));color:hsl(var(--foreground));border-radius:var(--radius,.5rem);padding:.58rem .68rem;font:inherit;font-size:.8rem;outline:none;transition:border-color .15s,box-shadow .15s}
     #${ROOT_ID} textarea{min-height:88px;resize:vertical;line-height:1.65}
@@ -77,12 +78,21 @@
     #${ROOT_ID} .z-native{font-size:.61rem;padding:.18rem .36rem;border-radius:.4rem;background:rgba(184,134,11,.09);border:1px solid rgba(184,134,11,.17);color:#8a5b08}
     html.dark #${ROOT_ID} .z-native{color:#deb24b}
     #${ROOT_ID} .z-actions{position:sticky;bottom:.5rem;z-index:2;margin-top:1rem;display:flex;align-items:center;justify-content:space-between;gap:.8rem;flex-wrap:wrap;border:1px solid hsl(var(--border));border-radius:calc(var(--radius,.5rem) + .2rem);padding:.72rem .8rem;background:hsl(var(--background)/.90);backdrop-filter:blur(12px);box-shadow:0 -8px 24px rgba(0,0,0,.035)}
-    #${ROOT_ID} .z-save{border:0;border-radius:var(--radius,.5rem);padding:.6rem .92rem;font:inherit;font-size:.78rem;font-weight:800;color:#fff;background:linear-gradient(135deg,#047857,#065f46 68%,#8f6418);box-shadow:0 6px 16px rgba(6,95,70,.16);cursor:pointer}
-    #${ROOT_ID} .z-save:disabled{opacity:.55;cursor:wait}
+    #${ROOT_ID} .z-save,#${ROOT_ID} .z-mini-btn{border:0;border-radius:var(--radius,.5rem);padding:.6rem .92rem;font:inherit;font-size:.75rem;font-weight:800;color:#fff;background:linear-gradient(135deg,#047857,#065f46 68%,#8f6418);box-shadow:0 6px 16px rgba(6,95,70,.12);cursor:pointer}
+    #${ROOT_ID} .z-mini-btn{padding:.48rem .7rem;font-size:.68rem}
+    #${ROOT_ID} .z-mini-btn.z-danger{background:rgba(220,38,38,.09);box-shadow:none;color:#dc2626;border:1px solid rgba(220,38,38,.2)}
+    #${ROOT_ID} .z-save:disabled,#${ROOT_ID} .z-mini-btn:disabled{opacity:.55;cursor:wait}
     #${ROOT_ID} .z-status{font-size:.7rem;color:hsl(var(--muted-foreground))}
     #${ROOT_ID} .z-status.ok{color:#059669}#${ROOT_ID} .z-status.err{color:#dc2626}
     #${ROOT_ID} .z-loading{padding:3rem 1rem;text-align:center;color:hsl(var(--muted-foreground));font-size:.8rem}
     #${ROOT_ID} .z-error{border:1px solid rgba(220,38,38,.24);background:rgba(220,38,38,.05);border-radius:.7rem;padding:.9rem;color:#dc2626;font-size:.76rem;line-height:1.7}
+    #${ROOT_ID} .z-pending{border:1px solid rgba(184,134,11,.24);background:linear-gradient(135deg,rgba(184,134,11,.08),rgba(16,185,129,.04));border-radius:.75rem;padding:.85rem;font-size:.72rem;line-height:1.8;color:hsl(var(--muted-foreground))}
+    #${ROOT_ID} .z-ns-create{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:.55rem;align-items:end}
+    #${ROOT_ID} .z-ns-list{display:grid;gap:.55rem;margin-top:.8rem}
+    #${ROOT_ID} .z-ns-row{display:grid;grid-template-columns:minmax(0,.7fr) minmax(0,1.6fr) auto auto;gap:.55rem;align-items:center;padding:.68rem;border:1px solid hsl(var(--border));border-radius:.7rem;background:hsl(var(--background)/.42)}
+    #${ROOT_ID} .z-ns-admin{font-size:.75rem;font-weight:800;direction:ltr;text-align:left}
+    #${ROOT_ID} .z-ns-url{min-width:0;font-size:.66rem;direction:ltr;text-align:left;color:hsl(var(--muted-foreground));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    @media(max-width:760px){#${ROOT_ID} .z-ns-create{grid-template-columns:1fr}#${ROOT_ID} .z-ns-row{grid-template-columns:1fr auto auto}#${ROOT_ID} .z-ns-url{grid-column:1/-1;grid-row:2}}
   `;
 
   if (!document.getElementById('zomorod-special-style')) {
@@ -97,6 +107,7 @@
     sliders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 21v-7m0-4V3m8 18v-9m0-4V3m8 18v-5m0-4V3M1 14h6m2-6h6m2 8h6"/></svg>',
     link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg>',
     bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>',
+    users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
   };
 
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
@@ -137,7 +148,12 @@
       headers.set('X-Client-Timezone', Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
       headers.set('X-Client-Timezone-Offset-Minutes', String(-new Date().getTimezoneOffset()));
       const response = await fetch(path, { ...options, headers, signal: controller.signal, cache: 'no-store' });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        const error = new Error(`HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
+      if (response.status === 204) return null;
       return await response.json();
     } finally {
       clearTimeout(timeout);
@@ -180,10 +196,7 @@
   function setTabState(enabled) {
     const tabBar = findSettingsTabBar();
     const tab = document.getElementById(NAV_ID);
-    if (tabBar) {
-      if (enabled) tabBar.setAttribute('data-zomorod-active', '1');
-      else tabBar.removeAttribute('data-zomorod-active');
-    }
+    if (tabBar) enabled ? tabBar.setAttribute('data-zomorod-active', '1') : tabBar.removeAttribute('data-zomorod-active');
     if (tab) tab.dataset.zActive = enabled ? 'true' : 'false';
   }
 
@@ -213,6 +226,11 @@
     setTabState(false);
   }
 
+  function removeOwnerOnlyUi() {
+    if (active) deactivate();
+    document.getElementById(NAV_ID)?.remove();
+  }
+
   function mountShell(html) {
     const outlet = getOutlet();
     if (!outlet) return null;
@@ -236,30 +254,110 @@
     mountShell(`<div class="z-error">Zomorod could not load PasarGuard settings.<br>${escapeHtml(error?.name === 'AbortError' ? 'Request timed out' : (error?.message || error))}</div>`);
   }
 
+  function namespaceSection() {
+    if (namespaceError) {
+      const pending = namespaceError.status === 404
+        ? 'ماژول مسیرهای اختصاصی روی سرور کپی شده، اما Routeهای Python بعد از یک راه‌اندازی عادی PasarGuard فعال می‌شوند. Installer برای جلوگیری از قطع SSH هیچ Restart/Recreate انجام نمی‌دهد.'
+        : `بخش مسیرهای اختصاصی در دسترس نیست: ${namespaceError.message || namespaceError}`;
+      return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.users}</span>Admin Subscription Namespaces</h3><div class="z-card-note">فقط Owner اصلی PasarGuard به این بخش دسترسی دارد.</div></div><span class="z-native">OWNER ONLY</span></div><div class="z-pending">${escapeHtml(pending)}</div></section>`;
+    }
+
+    if (!cachedNamespaces) return '';
+    const admins = Array.isArray(cachedNamespaces.admins) ? cachedNamespaces.admins : [];
+    const routes = Array.isArray(cachedNamespaces.routes) ? cachedNamespaces.routes : [];
+    const options = admins.map((admin) => `<option value="${escapeHtml(admin.id)}" data-username="${escapeHtml(admin.username)}">${escapeHtml(admin.username)}</option>`).join('');
+    const rows = routes.length ? routes.map((route) => {
+      const example = `${location.origin}${route.path_prefix}/<subscription-hash>`;
+      return `<div class="z-ns-row" data-z-route="${escapeHtml(route.slug)}"><div class="z-ns-admin">${escapeHtml(route.username)}</div><div class="z-ns-url" title="${escapeHtml(example)}">${escapeHtml(example)}</div><button type="button" class="z-mini-btn z-copy-ns" data-prefix="${escapeHtml(`${location.origin}${route.path_prefix}/`)}">Copy Prefix</button><button type="button" class="z-mini-btn z-danger z-delete-ns" data-slug="${escapeHtml(route.slug)}">Delete</button></div>`;
+    }).join('') : '<div class="z-help">هنوز برای هیچ ادمینی مسیر اختصاصی ساخته نشده است.</div>';
+
+    return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.users}</span>Admin Subscription Namespaces</h3><div class="z-card-note">مسیر نمونه: /sub/pedram/&lt;subscription-hash&gt;. توکن فقط وقتی کار می‌کند که کاربر واقعاً متعلق به همان ادمین باشد.</div></div><span class="z-native">OWNER ONLY</span></div>
+      <div class="z-ns-create">
+        <div class="z-field"><label for="z-ns-admin">ادمین</label><select id="z-ns-admin">${options}</select></div>
+        <div class="z-field"><label for="z-ns-slug">مسیر</label><input id="z-ns-slug" type="text" dir="ltr" maxlength="32" placeholder="pedram"></div>
+        <button type="button" class="z-mini-btn" id="z-create-ns">Create / Update</button>
+      </div>
+      <div class="z-help">هش همان توکن امن و Native خود PasarGuard است؛ Zomorod توکن جدید یا ضعیف‌تری تولید نمی‌کند.</div>
+      <div class="z-ns-list">${rows}</div>
+    </section>`;
+  }
+
+  function bindNamespaceActions(root) {
+    const select = root?.querySelector('#z-ns-admin');
+    const slug = root?.querySelector('#z-ns-slug');
+    const syncSlug = () => {
+      if (!(select instanceof HTMLSelectElement) || !(slug instanceof HTMLInputElement)) return;
+      const option = select.selectedOptions[0];
+      const username = option?.dataset.username || '';
+      slug.value = username.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^[-_]+|[-_]+$/g, '') || `admin-${select.value}`;
+    };
+    if (select instanceof HTMLSelectElement) {
+      select.addEventListener('change', syncSlug);
+      if (slug instanceof HTMLInputElement && !slug.value) syncSlug();
+    }
+
+    root?.querySelector('#z-create-ns')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      if (!(button instanceof HTMLButtonElement) || !(select instanceof HTMLSelectElement) || !(slug instanceof HTMLInputElement)) return;
+      button.disabled = true;
+      try {
+        await api('/api/zomorod/admin-subscriptions', { method: 'POST', body: JSON.stringify({ admin_id: Number(select.value), slug: slug.value.trim(), enabled: true }) });
+        cachedNamespaces = await api('/api/zomorod/admin-subscriptions');
+        namespaceError = null;
+        if (cachedSettings) render(cachedSettings);
+      } catch (error) {
+        alert(`Zomorod: ${error?.message || error}`);
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    root?.querySelectorAll('.z-copy-ns').forEach((button) => button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(button.dataset.prefix || '');
+        const old = button.textContent;
+        button.textContent = 'Copied ✓';
+        setTimeout(() => { if (button.isConnected) button.textContent = old; }, 1400);
+      } catch (_) {}
+    }));
+
+    root?.querySelectorAll('.z-delete-ns').forEach((button) => button.addEventListener('click', async () => {
+      const routeSlug = button.dataset.slug || '';
+      if (!routeSlug || !confirm(`Delete /sub/${routeSlug}/ namespace?`)) return;
+      button.disabled = true;
+      try {
+        await api(`/api/zomorod/admin-subscriptions/${encodeURIComponent(routeSlug)}`, { method: 'DELETE' });
+        cachedNamespaces = await api('/api/zomorod/admin-subscriptions');
+        if (cachedSettings) render(cachedSettings);
+      } catch (error) {
+        alert(`Zomorod: ${error?.message || error}`);
+      }
+    }));
+  }
+
   function render(settings) {
     cachedSettings = settings;
     const cfg = extract(settings);
-    const apps = cfg.apps.length ? cfg.apps.map((app) => `<span class="z-chip">${escapeHtml(app.name)} · ${escapeHtml(app.platform)}</span>`).join('') : '<span class="z-help">اپلیکیشنی در PasarGuard تعریف نشده است.</span>';
+    const apps = cfg.apps.length ? cfg.apps.map((app) => `<span class="z-chip">${escapeHtml(app.name || '')}${app.platform ? ` · ${escapeHtml(app.platform)}` : ''}</span>`).join('') : '<span class="z-help">اپلیکیشنی در PasarGuard تعریف نشده است.</span>';
     const html = `
-      <section class="z-hero"><div class="z-hero-row"><div class="z-brand"><div class="z-logo">${icons.gem}</div><div><div class="z-title-row"><h2 class="z-title">Zomorod Template</h2><span class="z-special">SPECIAL</span></div><div class="z-subtitle">قابلیت‌های ویژه زمرد، بدون دکمه کلی Runtime و بدون Popup</div></div></div><span class="z-version">v${VERSION}</span></div></section>
+      <section class="z-hero"><div class="z-hero-row"><div class="z-brand"><div class="z-logo">${icons.gem}</div><div><div class="z-title-row"><h2 class="z-title">Zomorod Template</h2><span class="z-special">SPECIAL</span></div><div class="z-subtitle">تنظیمات ویژه زمرد — فقط برای Owner اصلی PasarGuard</div></div></div><span class="z-version">v${VERSION}</span></div></section>
       <div class="z-content">
-        <section class="z-card"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.sliders}</span>تنظیمات عمومی</h3><div class="z-card-note">قابلیت‌های عمومی به‌صورت پیش‌فرض فعال‌اند؛ فقط امکانات Special کنترل جدا دارند.</div></div></div><div class="z-grid">
+        ${namespaceSection()}
+        <section class="z-card"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.sliders}</span>تنظیمات عمومی</h3><div class="z-card-note">قابلیت‌های عمومی به‌صورت پیش‌فرض فعال‌اند؛ امکانات Special کنترل مستقل دارند.</div></div></div><div class="z-grid">
           <div class="z-field"><label for="z-store">نام فروشگاه</label><input id="z-store" type="text" maxlength="80" value="${escapeHtml(cfg.storeName)}"></div>
           <div class="z-toggle"><div><div class="z-toggle-title">نمایش Ping</div><div class="z-toggle-sub">نمایش پینگ تخمینی فعلی تمپلیت</div></div><input id="z-show-ping" type="checkbox" ${cfg.showPing ? 'checked' : ''}></div>
           <div class="z-toggle"><div><div class="z-toggle-title">نمایش اپلیکیشن‌ها</div><div class="z-toggle-sub">Applications تعریف‌شده در PasarGuard</div></div><input id="z-show-apps" type="checkbox" ${cfg.showApps ? 'checked' : ''}></div>
           <div class="z-field"><label>اپلیکیشن‌های تعریف‌شده</label><div class="z-apps">${apps}</div></div>
         </div></section>
-
-        <section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.link}</span>Special Connections</h3><div class="z-card-note">این گزینه‌ها فقط نحوه نمایش کانفیگ‌های واقعی موجود در Subscription را کنترل می‌کنند؛ چیزی ساختگی اضافه نمی‌شود.</div></div><span class="z-native">SPECIAL</span></div><div class="z-grid">
-          <div class="z-toggle is-special"><div><div class="z-toggle-title">نمایش کانفیگ‌های معمولی</div><div class="z-toggle-sub">VLESS / VMess / Trojan / SS و سایر کانفیگ‌های غیر WireGuard</div></div><input id="z-show-configs" type="checkbox" ${cfg.showConfigs ? 'checked' : ''}></div>
-          <div class="z-toggle is-special"><div><div class="z-toggle-title">نمایش WireGuard</div><div class="z-toggle-sub">فقط اگر WG واقعاً داخل لینک‌های Subscription وجود داشته باشد نمایش داده می‌شود</div></div><input id="z-show-wg" type="checkbox" ${cfg.showWireGuard ? 'checked' : ''}></div>
+        <section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.link}</span>Special Connections</h3><div class="z-card-note">فقط نمایش کانفیگ‌های واقعی موجود در Subscription کنترل می‌شود.</div></div><span class="z-native">SPECIAL</span></div><div class="z-grid">
+          <div class="z-toggle is-special"><div><div class="z-toggle-title">نمایش کانفیگ‌های معمولی</div><div class="z-toggle-sub">VLESS / VMess / Trojan / SS و سایر کانفیگ‌ها</div></div><input id="z-show-configs" type="checkbox" ${cfg.showConfigs ? 'checked' : ''}></div>
+          <div class="z-toggle is-special"><div><div class="z-toggle-title">نمایش WireGuard</div><div class="z-toggle-sub">فقط اگر WireGuard واقعاً داخل Subscription باشد</div></div><input id="z-show-wg" type="checkbox" ${cfg.showWireGuard ? 'checked' : ''}></div>
           <div class="z-toggle"><div><div class="z-toggle-title">Allow browser config</div></div><input id="z-native-browser" type="checkbox" ${cfg.allowBrowserConfig ? 'checked' : ''}></div>
           <div class="z-toggle"><div><div class="z-toggle-title">Links format</div></div><input id="z-native-links" type="checkbox" ${cfg.nativeLinks ? 'checked' : ''}></div>
-          <div class="z-toggle"><div><div class="z-toggle-title">WireGuard native format</div><div class="z-toggle-sub">تنظیم Native خود PasarGuard</div></div><input id="z-native-wg" type="checkbox" ${cfg.nativeWireGuard ? 'checked' : ''}></div>
+          <div class="z-toggle"><div><div class="z-toggle-title">WireGuard native format</div></div><input id="z-native-wg" type="checkbox" ${cfg.nativeWireGuard ? 'checked' : ''}></div>
         </div></section>
-
-        <section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.bell}</span>Special Announcement</h3><div class="z-card-note">وقتی اعلان واقعی ارسال شود، داخل تمپلیت با افکت Emerald/Gold و انیمیشن ویژه برجسته می‌شود.</div></div><span class="z-native">SPECIAL</span></div><div class="z-grid">
-          <div class="z-toggle is-special"><div><div class="z-toggle-title">نمایش اعلان ویژه</div><div class="z-toggle-sub">بدون متن اعلان، هیچ کارت نمایشی ساختگی نشان داده نمی‌شود</div></div><input id="z-show-ann" type="checkbox" ${cfg.showAnnouncement ? 'checked' : ''}></div>
+        <section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.bell}</span>Special Announcement</h3><div class="z-card-note">اعلان واقعی PasarGuard با استایل و انیمیشن Emerald/Gold نمایش داده می‌شود.</div></div><span class="z-native">SPECIAL</span></div><div class="z-grid">
+          <div class="z-toggle is-special"><div><div class="z-toggle-title">نمایش اعلان ویژه</div><div class="z-toggle-sub">بدون متن اعلان، کارت ساختگی نمایش داده نمی‌شود</div></div><input id="z-show-ann" type="checkbox" ${cfg.showAnnouncement ? 'checked' : ''}></div>
           <div class="z-field"><label for="z-ann-mode">حالت نمایش</label><select id="z-ann-mode"><option value="always" ${cfg.announcementMode === 'always' ? 'selected' : ''}>همیشه</option><option value="scheduled" ${cfg.announcementMode === 'scheduled' ? 'selected' : ''}>ساعت‌بندی‌شده</option></select></div>
           <div class="z-field"><label for="z-ann-times">ساعت‌ها</label><input id="z-ann-times" type="text" dir="ltr" placeholder="09:00,14:30,21:00" value="${escapeHtml(cfg.announcementTimes)}"></div>
           <div class="z-field"><label for="z-ann-duration">مدت هر نوبت (دقیقه)</label><input id="z-ann-duration" type="number" min="1" max="1440" value="${escapeHtml(cfg.announcementDuration)}"></div>
@@ -270,15 +368,16 @@
       <div class="z-actions"><span class="z-status" id="z-status">آماده ذخیره</span><button class="z-save" id="z-save">Save Zomorod Settings</button></div>`;
     const root = mountShell(html);
     root?.querySelector('#z-save')?.addEventListener('click', () => save(settings));
+    bindNamespaceActions(root);
   }
 
   async function save(settings) {
     const button = field('z-save');
-    const status = field('z-status');
-    if (!button || !status) return;
+    const statusNode = field('z-status');
+    if (!button || !statusNode) return;
     button.disabled = true;
-    status.className = 'z-status';
-    status.textContent = 'در حال ذخیره…';
+    statusNode.className = 'z-status';
+    statusNode.textContent = 'در حال ذخیره…';
     try {
       const times = value('z-ann-times');
       if (times && !times.split(',').every((item) => /^([01]\d|2[0-3]):[0-5]\d$/.test(item.trim()))) throw new Error('فرمت ساعت باید HH:MM باشد');
@@ -305,26 +404,38 @@
       subscription.manual_sub_request.wireguard = checked('z-native-wg');
       const updated = await api('/api/settings', { method: 'PUT', body: JSON.stringify(settings) });
       cachedSettings = updated;
-      status.className = 'z-status ok';
-      status.textContent = 'ذخیره شد ✓';
+      statusNode.className = 'z-status ok';
+      statusNode.textContent = 'ذخیره شد ✓';
     } catch (error) {
       console.error('[Zomorod] save failed', error);
-      status.className = 'z-status err';
-      status.textContent = `خطا: ${error?.name === 'AbortError' ? 'timeout' : (error?.message || error)}`;
+      statusNode.className = 'z-status err';
+      statusNode.textContent = `خطا: ${error?.name === 'AbortError' ? 'timeout' : (error?.message || error)}`;
     } finally {
       button.disabled = false;
     }
   }
 
+  async function loadNamespaces() {
+    try {
+      cachedNamespaces = await api('/api/zomorod/admin-subscriptions');
+      namespaceError = null;
+    } catch (error) {
+      cachedNamespaces = null;
+      namespaceError = error;
+    }
+  }
+
   async function openPage() {
+    if (!ownerAllowed) return;
     if (active && cachedSettings) {
+      await loadNamespaces();
       render(cachedSettings);
       return;
     }
     active = true;
     renderLoading();
     try {
-      const settings = await api('/api/settings');
+      const [settings] = await Promise.all([api('/api/settings'), loadNamespaces()]);
       if (!active) return;
       render(settings);
     } catch (error) {
@@ -335,6 +446,7 @@
   }
 
   function ensureTab() {
+    if (!ownerResolved || !ownerAllowed) return;
     const tabBar = findSettingsTabBar();
     if (!tabBar) return;
     if (!tabBar.dataset.zomorodBound) {
@@ -350,7 +462,7 @@
     button.type = 'button';
     button.dataset.zActive = 'false';
     button.className = 'relative flex-shrink-0 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors text-muted-foreground hover:text-foreground';
-    button.title = 'Zomorod Special';
+    button.title = 'Zomorod Special — Owner only';
     button.innerHTML = `<div class="z-tab">${icons.gem.replace('<svg ', '<svg class="z-tab-gem" ')}<span>Zomorod</span><span class="z-tab-badge">Special</span></div>`;
     button.addEventListener('click', (event) => {
       event.preventDefault();
@@ -363,6 +475,10 @@
 
   function maintain() {
     maintainQueued = false;
+    if (!ownerResolved || !ownerAllowed) {
+      removeOwnerOnlyUi();
+      return;
+    }
     const tabBar = findSettingsTabBar();
     if (!tabBar) {
       if (active) deactivate();
@@ -383,9 +499,25 @@
     requestAnimationFrame(maintain);
   }
 
+  async function resolveOwnerAccess() {
+    try {
+      const current = await api('/api/admin');
+      ownerAllowed = current?.role?.is_owner === true || current?.is_owner === true;
+    } catch (_) {
+      ownerAllowed = false;
+    } finally {
+      ownerResolved = true;
+      scheduleMaintain();
+    }
+  }
+
   window.addEventListener('popstate', () => { if (active) deactivate(); scheduleMaintain(); });
   const observer = new MutationObserver(scheduleMaintain);
   observer.observe(document.documentElement, { subtree: true, childList: true });
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', scheduleMaintain, { once: true });
-  else scheduleMaintain();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => { resolveOwnerAccess(); scheduleMaintain(); }, { once: true });
+  } else {
+    resolveOwnerAccess();
+    scheduleMaintain();
+  }
 })();
