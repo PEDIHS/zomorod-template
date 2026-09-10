@@ -82,6 +82,7 @@ backup_existing() {
   [[ -f "${TEMPLATE_FILE}" ]] && cp -a "${TEMPLATE_FILE}" "${BACKUP_DIR}/subscription-index.html"
   [[ -f "${ENV_FILE}" ]] && cp -a "${ENV_FILE}" "${BACKUP_DIR}/pasarguard.env"
   [[ -f "/var/lib/pasarguard/zomorod/admin-subscriptions.json" ]] && cp -a "/var/lib/pasarguard/zomorod/admin-subscriptions.json" "${BACKUP_DIR}/admin-subscriptions.json"
+  return 0
 }
 
 install_repo_prebuilt() {
@@ -153,7 +154,6 @@ install_plugin_files() {
   install -m 0755 "${TMP_DIR}/integrate-dashboard.sh" "${ZOMOROD_ROOT}/plugin/integrate-dashboard.sh"
   install -m 0644 "${TMP_DIR}/zomorod_admin_subscriptions.py" "${ZOMOROD_ROOT}/backend/zomorod_admin_subscriptions.py"
 }
-
 
 install_cli() {
   log "installing Zomorod update command"
