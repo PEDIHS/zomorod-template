@@ -178,16 +178,13 @@ Zomorod دیگر Local Storage مربوط به Theme پنل PasarGuard را لم
 
 ## 🚀 نصب
 
-برای جلوگیری از Cache شدن نسخه قدیمی Installer، روش پیشنهادی این است که ابتدا فایل نصب با Cache Bypass دریافت و سپس اجرا شود:
+دستور استاندارد نصب روی یک سرور دارای PasarGuard:
 
 ```bash
-curl -fL --show-error \
-  -H 'Cache-Control: no-cache' \
-  -H 'Pragma: no-cache' \
-  "https://raw.githubusercontent.com/PEDIHS/zomorod-template/main/install.sh?install=$(date +%s)" \
-  -o /tmp/zomorod-install.sh && \
-sudo bash /tmp/zomorod-install.sh
+curl -fL --show-error -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' "https://raw.githubusercontent.com/PEDIHS/zomorod-template/main/install.sh?install=$(date +%s)" -o /tmp/zomorod-install.sh && sudo bash /tmp/zomorod-install.sh
 ```
+
+این روش Installer را ابتدا در `/tmp` ذخیره می‌کند، نسخه کش‌شده را دور می‌زند و فقط در صورت دانلود موفق آن را اجرا می‌کند.
 
 Installer برای فارسی `latest` از Prebuilt اصلی زمرد استفاده می‌کند، فایل‌های Plugin و Backend را نصب می‌کند، دستور `zomorod` را در `/usr/local/bin/zomorod` قرار می‌دهد و Integration را اعمال می‌کند.
 
