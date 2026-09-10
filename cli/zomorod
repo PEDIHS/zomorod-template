@@ -2,14 +2,14 @@
 set -Eeuo pipefail
 
 REPO="PEDIHS/zomorod-template"
-RAW="https://raw.githubusercontent.com/${REPO}/main/install.sh"
+API="https://api.github.com/repos/${REPO}/commits/main"
 
 usage() {
   cat <<'EOF'
 Zomorod command
 
 Usage:
-  sudo zomorod update          Download and apply the newest Zomorod version
+  sudo zomorod update          Resolve latest main commit and apply that exact snapshot
   zomorod version              Show locally installed plugin version
   zomorod status               Show installed files and integration status
 EOF
@@ -19,20 +19,40 @@ run_root() {
   if [[ ${EUID} -eq 0 ]]; then "$@"; else sudo "$@"; fi
 }
 
+resolve_main_sha() {
+  local json
+  json="$(curl -fsSL --connect-timeout 20 --max-time 60 --retry 3 --retry-delay 2 \
+    -H 'Accept: application/vnd.github+json' \
+    -H 'Cache-Control: no-cache' \
+    "${API}?t=$(date +%s)")" || return 1
+  python3 -c 'import json,sys; d=json.load(sys.stdin); s=d.get("sha",""); print(s if len(s)==40 else "")' <<<"$json"
+}
+
 case "${1:-}" in
   update)
     shift
+    command -v curl >/dev/null 2>&1 || { echo '[Zomorod] curl is required' >&2; exit 1; }
+    command -v python3 >/dev/null 2>&1 || { echo '[Zomorod] python3 is required' >&2; exit 1; }
     tmp="$(mktemp /tmp/zomorod-update.XXXXXX.sh)"
     trap 'rm -f "$tmp"' EXIT
-    stamp="$(date +%s)"
-    echo "[Zomorod] checking latest main..."
+
+    echo "[Zomorod] resolving latest main commit..."
+    sha="$(resolve_main_sha)"
+    [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo '[Zomorod] could not resolve latest main SHA' >&2; exit 1; }
+    echo "[Zomorod] latest commit: $sha"
+
+    raw="https://raw.githubusercontent.com/${REPO}/${sha}/install.sh"
     curl -fL --show-error --connect-timeout 20 --max-time 120 --retry 3 --retry-delay 2 \
-      -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
-      "${RAW}?update=${stamp}" -o "$tmp"
+      "$raw" -o "$tmp"
     grep -q 'Zomorod Template + Special Plugin installer' "$tmp" || { echo '[Zomorod] invalid installer received' >&2; exit 1; }
-    echo "[Zomorod] latest installer downloaded; applying update..."
-    run_root bash "$tmp" --update "$@"
-    echo "[Zomorod] update finished. Close old PasarGuard tabs and reopen Settings."
+
+    # Pin every file downloaded by the installer to the same immutable commit.
+    sed -i "s/^SOURCE_REF=\"main\"$/SOURCE_REF=\"${sha}\"/" "$tmp"
+    grep -q "^SOURCE_REF=\"${sha}\"$" "$tmp" || { echo '[Zomorod] could not pin installer source ref' >&2; exit 1; }
+
+    echo "[Zomorod] applying immutable snapshot..."
+    run_root bash "$tmp" "$@"
+    echo "[Zomorod] update finished at commit $sha. Close old PasarGuard tabs and reopen Settings."
     ;;
   version)
     file="/opt/zomorod/plugin/zomorod-special.js"
