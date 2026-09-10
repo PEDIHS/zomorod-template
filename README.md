@@ -178,42 +178,57 @@ Zomorod دیگر Local Storage مربوط به Theme پنل PasarGuard را لم
 
 ## 🚀 نصب
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/PEDIHS/zomorod-template/main/install.sh | sudo bash
-```
-
-برای بررسی Installer قبل از اجرا:
+برای جلوگیری از Cache شدن نسخه قدیمی Installer، روش پیشنهادی این است که ابتدا فایل نصب با Cache Bypass دریافت و سپس اجرا شود:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/PEDIHS/zomorod-template/main/install.sh -o /tmp/zomorod-install.sh
+curl -fL --show-error \
+  -H 'Cache-Control: no-cache' \
+  -H 'Pragma: no-cache' \
+  "https://raw.githubusercontent.com/PEDIHS/zomorod-template/main/install.sh?install=$(date +%s)" \
+  -o /tmp/zomorod-install.sh && \
 sudo bash /tmp/zomorod-install.sh
 ```
 
-Installer برای فارسی `latest` از Prebuilt اصلی زمرد استفاده می‌کند و Integration را روی PasarGuard درحال اجرا اعمال می‌کند.
+Installer برای فارسی `latest` از Prebuilt اصلی زمرد استفاده می‌کند، فایل‌های Plugin و Backend را نصب می‌کند، دستور `zomorod` را در `/usr/local/bin/zomorod` قرار می‌دهد و Integration را اعمال می‌کند.
 
-### بدون Restart / Recreate
+### Restart امن PasarGuard
 
-Installer عمداً هیچ‌کدام از این عملیات را انجام نمی‌دهد:
+در حالت پیش‌فرض، بعد از نصب Integration، فقط خود پنل PasarGuard از طریق CLI رسمی آن Restart می‌شود:
 
-- `pasarguard restart`
-- Docker restart
-- Docker recreate
-- Docker compose down/up
-- stop/start سرویس‌های PasarGuard
+```text
+pasarguard restart
+```
 
-این رفتار برای جلوگیری از قطع SSH و اختلال در Network Stack طراحی شده است.
+Installer مستقیماً `docker restart`، `docker compose down/up`، recreate یا reboot سیستم اجرا نمی‌کند. بعد از Restart، وضعیت PasarGuard بررسی و Integration زمرد دوباره اعمال می‌شود تا Routeهای Backend مانند `/sub/<admin>/<subscription-hash>` فعال شوند.
+
+اگر عمداً نمی‌خواهید پنل در همان لحظه Restart شود:
+
+```bash
+sudo bash /tmp/zomorod-install.sh --no-restart
+```
+
+در این حالت Routeهای Python بعد از Restart عادی بعدی PasarGuard فعال می‌شوند.
 
 ---
 
 ## ♻️ بروزرسانی
 
-همان Installer را دوباره اجرا کنید:
+بعد از اولین نصب، روش رسمی بروزرسانی این است:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/PEDIHS/zomorod-template/main/install.sh | sudo bash
+sudo zomorod update
 ```
 
-نصب idempotent است و قبل از جایگزینی فایل‌های موجود Backup ایجاد می‌کند.
+Updater ابتدا SHA دقیق آخرین Commit شاخه `main` را Resolve می‌کند و سپس همان Snapshot ثابت را نصب می‌کند تا فایل‌های چند نسخه با هم مخلوط نشوند.
+
+برای بررسی نسخه و وضعیت نصب:
+
+```bash
+zomorod version
+zomorod status
+```
+
+اگر CLI هنوز روی یک نصب قدیمی وجود ندارد، یک بار Installer بخش «نصب» را اجرا کنید تا `/usr/local/bin/zomorod` ساخته شود.
 
 ---
 
@@ -224,7 +239,10 @@ curl -fsSL https://raw.githubusercontent.com/PEDIHS/zomorod-template/main/instal
 /opt/zomorod/plugin/zomorod-special.js
 /opt/zomorod/plugin/zomorod-runtime.js
 /opt/zomorod/plugin/integrate-dashboard.sh
+/opt/zomorod/backend/zomorod_admin_subscriptions.py
+/usr/local/bin/zomorod
 /var/lib/pasarguard/templates/subscription/index.html
+/var/lib/pasarguard/zomorod/admin-subscriptions.json
 ```
 
 ---
@@ -238,7 +256,7 @@ PasarGuard در حال حاضر Plugin API رسمی برای ثبت Tab شخص �
 - MutationObserver به‌صورت idempotent و با `requestAnimationFrame` کنترل می‌شود.
 - درخواست Settings دارای timeout است تا صفحه روی Loading بی‌نهایت نماند.
 - Path/Timer بعد از Update پنل Integration را دوباره بررسی می‌کنند.
-- هیچ restart/recreate برای این بازیابی انجام نمی‌شود.
+- Restart موردنیاز Backend فقط از CLI رسمی `pasarguard restart` انجام می‌شود؛ هیچ Lifecycle مستقیم Docker اجرا نمی‌شود.
 
 ---
 
