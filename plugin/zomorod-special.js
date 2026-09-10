@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.4.0';
+  const VERSION = '4.5.0';
   const HEADER_PREFIX = 'x-zomorod-';
   const NAV_ID = 'zomorod-special-nav';
   const ROOT_ID = 'zomorod-special-root';
@@ -9,14 +9,18 @@
 
   let active = false;
   let cachedSettings = null;
+  let cachedProfile = null;
   let cachedNamespaces = null;
   let namespaceError = null;
   let maintainQueued = false;
-  let ownerResolved = false;
-  let ownerAllowed = false;
+  let accessResolved = false;
+  let accessAllowed = false;
+  let isOwner = false;
+  let currentAdmin = null;
 
   const defaults = {
     storeName: 'زمرد',
+    supportId: '',
     showConfigs: false,
     showWireGuard: false,
     showPing: true,
@@ -45,8 +49,9 @@
     #${ROOT_ID} .z-logo svg{width:25px;height:25px}
     #${ROOT_ID} .z-title-row{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
     #${ROOT_ID} .z-title{margin:0;font-size:1.12rem;font-weight:850;letter-spacing:-.01em}
-    #${ROOT_ID} .z-special{font-size:.61rem;font-weight:850;padding:.22rem .44rem;border-radius:999px;color:#8a5b08;background:rgba(184,134,11,.10);border:1px solid rgba(184,134,11,.24)}
-    html.dark #${ROOT_ID} .z-special{color:#e5b84e}
+    #${ROOT_ID} .z-special,#${ROOT_ID} .z-role{font-size:.61rem;font-weight:850;padding:.22rem .44rem;border-radius:999px;color:#8a5b08;background:rgba(184,134,11,.10);border:1px solid rgba(184,134,11,.24)}
+    #${ROOT_ID} .z-role{color:#047857;background:rgba(16,185,129,.08);border-color:rgba(16,185,129,.18)}
+    html.dark #${ROOT_ID} .z-special{color:#e5b84e}html.dark #${ROOT_ID} .z-role{color:#6ee7b7}
     #${ROOT_ID} .z-subtitle{margin-top:.18rem;font-size:.75rem;color:hsl(var(--muted-foreground));line-height:1.65}
     #${ROOT_ID} .z-version{font-size:.66rem;color:hsl(var(--muted-foreground));border:1px solid hsl(var(--border));background:hsl(var(--background)/.72);padding:.3rem .5rem;border-radius:.45rem}
     #${ROOT_ID} .z-content{display:grid;gap:1rem;margin-top:1rem}
@@ -87,6 +92,8 @@
     #${ROOT_ID} .z-loading{padding:3rem 1rem;text-align:center;color:hsl(var(--muted-foreground));font-size:.8rem}
     #${ROOT_ID} .z-error{border:1px solid rgba(220,38,38,.24);background:rgba(220,38,38,.05);border-radius:.7rem;padding:.9rem;color:#dc2626;font-size:.76rem;line-height:1.7}
     #${ROOT_ID} .z-pending{border:1px solid rgba(184,134,11,.24);background:linear-gradient(135deg,rgba(184,134,11,.08),rgba(16,185,129,.04));border-radius:.75rem;padding:.85rem;font-size:.72rem;line-height:1.8;color:hsl(var(--muted-foreground))}
+    #${ROOT_ID} .z-path{display:flex;align-items:center;justify-content:space-between;gap:.7rem;flex-wrap:wrap;border:1px solid rgba(16,185,129,.18);background:rgba(16,185,129,.045);border-radius:.7rem;padding:.72rem}
+    #${ROOT_ID} .z-path code{direction:ltr;text-align:left;font-size:.7rem;overflow-wrap:anywhere}
     #${ROOT_ID} .z-ns-create{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:.55rem;align-items:end}
     #${ROOT_ID} .z-ns-list{display:grid;gap:.55rem;margin-top:.8rem}
     #${ROOT_ID} .z-ns-row{display:grid;grid-template-columns:minmax(0,.7fr) minmax(0,1.6fr) auto auto;gap:.55rem;align-items:center;padding:.68rem;border:1px solid hsl(var(--border));border-radius:.7rem;background:hsl(var(--background)/.42)}
@@ -136,6 +143,28 @@
   const value = (id) => String(field(id)?.value ?? '').trim();
   const checked = (id) => Boolean(field(id)?.checked);
 
+  const supportDisplay = (input) => {
+    const raw = String(input || '').trim();
+    if (!raw) return '';
+    try {
+      const parsed = new URL(raw);
+      if (['t.me', 'www.t.me', 'telegram.me', 'www.telegram.me'].includes(parsed.hostname.toLowerCase())) {
+        const path = parsed.pathname.replace(/^\/+|\/+$/g, '');
+        if (path && !path.includes('/') && !path.startsWith('+')) return `@${path}`;
+      }
+    } catch (_) {}
+    return raw;
+  };
+
+  const supportUrl = (input) => {
+    const raw = String(input || '').trim();
+    if (!raw) return '';
+    const username = raw.startsWith('@') ? raw.slice(1) : raw;
+    if (/^[A-Za-z0-9_]{4,64}$/.test(username)) return `https://t.me/${username}`;
+    if (/^(?:https?:\/\/|tg:\/\/)/i.test(raw)) return raw;
+    throw new Error('آیدی پشتیبانی باید به شکل @username یا لینک معتبر باشد');
+  };
+
   function currentPanelPath() {
     const hashPath = String(location.hash || '').replace(/^#/, '').split('?')[0];
     if (hashPath.startsWith('/')) return hashPath;
@@ -159,7 +188,12 @@
       headers.set('X-Client-Timezone-Offset-Minutes', String(-new Date().getTimezoneOffset()));
       const response = await fetch(path, { ...options, headers, signal: controller.signal, cache: 'no-store' });
       if (!response.ok) {
-        const error = new Error(`HTTP ${response.status}`);
+        let detail = '';
+        try {
+          const body = await response.json();
+          detail = typeof body?.detail === 'string' ? body.detail : '';
+        } catch (_) {}
+        const error = new Error(detail || `HTTP ${response.status}`);
         error.status = response.status;
         throw error;
       }
@@ -170,11 +204,12 @@
     }
   }
 
-  function extract(settings) {
+  function extractOwner(settings) {
     const subscription = settings?.subscription || {};
     const headers = normalizeHeaders(subscription.response_headers || {});
     return {
       storeName: decodeUtf8Base64(getHeader(headers, 'store-name-b64')) || getHeader(headers, 'store-name') || defaults.storeName,
+      supportId: decodeUtf8Base64(getHeader(headers, 'support-id-b64')) || supportDisplay(subscription.support_url) || defaults.supportId,
       showConfigs: asBool(getHeader(headers, 'show-configs'), defaults.showConfigs),
       showWireGuard: asBool(getHeader(headers, 'show-wireguard'), defaults.showWireGuard),
       showPing: asBool(getHeader(headers, 'show-ping'), defaults.showPing),
@@ -189,6 +224,28 @@
       nativeLinks: subscription.manual_sub_request?.links !== false,
       nativeWireGuard: subscription.manual_sub_request?.wireguard !== false,
       apps: Array.isArray(subscription.applications) ? subscription.applications : [],
+    };
+  }
+
+  function extractReseller(payload) {
+    const profile = payload?.profile || {};
+    return {
+      storeName: profile.store_name || currentAdmin?.profile_title || currentAdmin?.username || defaults.storeName,
+      supportId: profile.support_id || supportDisplay(profile.support_url) || '',
+      showConfigs: profile.show_configs ?? defaults.showConfigs,
+      showWireGuard: profile.show_wireguard ?? defaults.showWireGuard,
+      showPing: profile.show_ping ?? defaults.showPing,
+      showApps: profile.show_apps ?? defaults.showApps,
+      showAnnouncement: profile.show_announcement ?? defaults.showAnnouncement,
+      announcementMode: profile.announcement_mode === 'scheduled' ? 'scheduled' : 'always',
+      announcementTimes: profile.announcement_times || '',
+      announcementDuration: Number(profile.announcement_duration) || defaults.announcementDuration,
+      announce: '',
+      announceUrl: '',
+      allowBrowserConfig: true,
+      nativeLinks: true,
+      nativeWireGuard: true,
+      apps: [],
     };
   }
 
@@ -237,7 +294,7 @@
     setTabState(false);
   }
 
-  function removeOwnerOnlyUi() {
+  function removeUi() {
     if (active) deactivate();
     document.getElementById(NAV_ID)?.remove();
   }
@@ -262,13 +319,14 @@
   }
 
   function renderError(error) {
-    mountShell(`<div class="z-error">Zomorod could not load PasarGuard settings.<br>${escapeHtml(error?.name === 'AbortError' ? 'Request timed out' : (error?.message || error))}</div>`);
+    mountShell(`<div class="z-error">Zomorod could not load your settings.<br>${escapeHtml(error?.name === 'AbortError' ? 'Request timed out' : (error?.message || error))}</div>`);
   }
 
   function namespaceSection() {
+    if (!isOwner) return '';
     if (namespaceError) {
       const pending = namespaceError.status === 404
-        ? 'ماژول مسیرهای اختصاصی روی سرور کپی شده، اما Routeهای Python بعد از یک راه‌اندازی عادی PasarGuard فعال می‌شوند. Installer برای جلوگیری از قطع SSH هیچ Restart/Recreate انجام نمی‌دهد.'
+        ? 'ماژول مسیرهای اختصاصی هنوز داخل پروسه PasarGuard لود نشده است. Installer جدید از restart امن خود PasarGuard استفاده می‌کند؛ یک Update موفق باید این Routeها را فعال کند.'
         : `بخش مسیرهای اختصاصی در دسترس نیست: ${namespaceError.message || namespaceError}`;
       return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.users}</span>Admin Subscription Namespaces</h3><div class="z-card-note">فقط Owner اصلی PasarGuard به این بخش دسترسی دارد.</div></div><span class="z-native">OWNER ONLY</span></div><div class="z-pending">${escapeHtml(pending)}</div></section>`;
     }
@@ -282,18 +340,29 @@
       return `<div class="z-ns-row" data-z-route="${escapeHtml(route.slug)}"><div class="z-ns-admin">${escapeHtml(route.username)}</div><div class="z-ns-url" title="${escapeHtml(example)}">${escapeHtml(example)}</div><button type="button" class="z-mini-btn z-copy-ns" data-prefix="${escapeHtml(`${location.origin}${route.path_prefix}/`)}">Copy Prefix</button><button type="button" class="z-mini-btn z-danger z-delete-ns" data-slug="${escapeHtml(route.slug)}">Delete</button></div>`;
     }).join('') : '<div class="z-help">هنوز برای هیچ ادمینی مسیر اختصاصی ساخته نشده است.</div>';
 
-    return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.users}</span>Admin Subscription Namespaces</h3><div class="z-card-note">مسیر نمونه: /sub/pedram/&lt;subscription-hash&gt;. توکن فقط وقتی کار می‌کند که کاربر واقعاً متعلق به همان ادمین باشد.</div></div><span class="z-native">OWNER ONLY</span></div>
+    return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.users}</span>Admin Subscription Namespaces</h3><div class="z-card-note">Owner مسیر هر نماینده را می‌سازد؛ تنظیمات شخصی همان نماینده فقط روی کاربران خودش اعمال می‌شود.</div></div><span class="z-native">OWNER ONLY</span></div>
       <div class="z-ns-create">
         <div class="z-field"><label for="z-ns-admin">ادمین</label><select id="z-ns-admin">${options}</select></div>
         <div class="z-field"><label for="z-ns-slug">مسیر</label><input id="z-ns-slug" type="text" dir="ltr" maxlength="32" placeholder="pedram"></div>
         <button type="button" class="z-mini-btn" id="z-create-ns">Create / Update</button>
       </div>
-      <div class="z-help">هش همان توکن امن و Native خود PasarGuard است؛ Zomorod توکن جدید یا ضعیف‌تری تولید نمی‌کند.</div>
+      <div class="z-help">مثال: /sub/pedram/&lt;subscription-hash&gt; — هش همان توکن امن Native پاسارگارد است.</div>
       <div class="z-ns-list">${rows}</div>
     </section>`;
   }
 
+  function resellerPathSection(profilePayload) {
+    if (isOwner) return '';
+    const namespace = profilePayload?.namespace;
+    if (!namespace?.enabled) {
+      return `<section class="z-card"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.users}</span>مسیر فروشگاه شما</h3><div class="z-card-note">ساخت مسیر اختصاصی فقط دست Owner اصلی است.</div></div><span class="z-role">RESELLER</span></div><div class="z-pending">هنوز Namespace اختصاصی برای این حساب فعال نشده است. تنظیمات شما ذخیره می‌شوند و بعد از ساخت مسیر توسط Owner روی Subscription کاربران خودتان اعمال خواهند شد.</div></section>`;
+    }
+    const example = `${location.origin}${namespace.path_prefix}/<subscription-hash>`;
+    return `<section class="z-card"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.users}</span>مسیر فروشگاه شما</h3><div class="z-card-note">این تنظیمات فقط روی Subscription کاربران متعلق به حساب شما اعمال می‌شود.</div></div><span class="z-role">RESELLER</span></div><div class="z-path"><code>${escapeHtml(example)}</code><button type="button" class="z-mini-btn" id="z-copy-own-prefix" data-prefix="${escapeHtml(`${location.origin}${namespace.path_prefix}/`)}">Copy Prefix</button></div></section>`;
+  }
+
   function bindNamespaceActions(root) {
+    if (!isOwner) return;
     const select = root?.querySelector('#z-ns-admin');
     const slug = root?.querySelector('#z-ns-slug');
     const syncSlug = () => {
@@ -315,7 +384,7 @@
         await api('/api/zomorod/admin-subscriptions', { method: 'POST', body: JSON.stringify({ admin_id: Number(select.value), slug: slug.value.trim(), enabled: true }) });
         cachedNamespaces = await api('/api/zomorod/admin-subscriptions');
         namespaceError = null;
-        if (cachedSettings) render(cachedSettings);
+        if (cachedSettings) renderOwner(cachedSettings);
       } catch (error) {
         alert(`Zomorod: ${error?.message || error}`);
       } finally {
@@ -339,65 +408,114 @@
       try {
         await api(`/api/zomorod/admin-subscriptions/${encodeURIComponent(routeSlug)}`, { method: 'DELETE' });
         cachedNamespaces = await api('/api/zomorod/admin-subscriptions');
-        if (cachedSettings) render(cachedSettings);
+        if (cachedSettings) renderOwner(cachedSettings);
       } catch (error) {
         alert(`Zomorod: ${error?.message || error}`);
+      } finally {
+        button.disabled = false;
       }
     }));
   }
 
-  function render(settings) {
-    cachedSettings = settings;
-    const cfg = extract(settings);
-    const apps = cfg.apps.length ? cfg.apps.map((app) => `<span class="z-chip">${escapeHtml(app.name || '')}${app.platform ? ` · ${escapeHtml(app.platform)}` : ''}</span>`).join('') : '<span class="z-help">اپلیکیشنی در PasarGuard تعریف نشده است.</span>';
-    const html = `
-      <section class="z-hero"><div class="z-hero-row"><div class="z-brand"><div class="z-logo">${icons.gem}</div><div><div class="z-title-row"><h2 class="z-title">Zomorod Template</h2><span class="z-special">SPECIAL</span></div><div class="z-subtitle">تنظیمات ویژه زمرد — فقط برای Owner اصلی PasarGuard</div></div></div><span class="z-version">v${VERSION}</span></div></section>
-      <div class="z-content">
-        ${namespaceSection()}
-        <section class="z-card"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.sliders}</span>تنظیمات عمومی</h3><div class="z-card-note">قابلیت‌های عمومی به‌صورت پیش‌فرض فعال‌اند؛ امکانات Special کنترل مستقل دارند.</div></div></div><div class="z-grid">
-          <div class="z-field"><label for="z-store">نام فروشگاه</label><input id="z-store" type="text" maxlength="80" value="${escapeHtml(cfg.storeName)}"></div>
-          <div class="z-toggle"><div><div class="z-toggle-title">نمایش Ping</div><div class="z-toggle-sub">نمایش پینگ تخمینی فعلی تمپلیت</div></div><input id="z-show-ping" type="checkbox" ${cfg.showPing ? 'checked' : ''}></div>
-          <div class="z-toggle"><div><div class="z-toggle-title">نمایش اپلیکیشن‌ها</div><div class="z-toggle-sub">Applications تعریف‌شده در PasarGuard</div></div><input id="z-show-apps" type="checkbox" ${cfg.showApps ? 'checked' : ''}></div>
-          <div class="z-field"><label>اپلیکیشن‌های تعریف‌شده</label><div class="z-apps">${apps}</div></div>
-        </div></section>
-        <section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.link}</span>Special Connections</h3><div class="z-card-note">فقط نمایش کانفیگ‌های واقعی موجود در Subscription کنترل می‌شود.</div></div><span class="z-native">SPECIAL</span></div><div class="z-grid">
-          <div class="z-toggle is-special"><div><div class="z-toggle-title">نمایش کانفیگ‌های معمولی</div><div class="z-toggle-sub">VLESS / VMess / Trojan / SS و سایر کانفیگ‌ها</div></div><input id="z-show-configs" type="checkbox" ${cfg.showConfigs ? 'checked' : ''}></div>
-          <div class="z-toggle is-special"><div><div class="z-toggle-title">نمایش WireGuard</div><div class="z-toggle-sub">فقط اگر WireGuard واقعاً داخل Subscription باشد</div></div><input id="z-show-wg" type="checkbox" ${cfg.showWireGuard ? 'checked' : ''}></div>
+  function bindOwnPath(root) {
+    root?.querySelector('#z-copy-own-prefix')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      if (!(button instanceof HTMLButtonElement)) return;
+      try {
+        await navigator.clipboard.writeText(button.dataset.prefix || '');
+        const old = button.textContent;
+        button.textContent = 'Copied ✓';
+        setTimeout(() => { if (button.isConnected) button.textContent = old; }, 1400);
+      } catch (_) {}
+    });
+  }
+
+  function renderForm(cfg, profilePayload = null) {
+    const username = currentAdmin?.username || '';
+    const apps = isOwner
+      ? (cfg.apps.length ? cfg.apps.map((app) => `<span class="z-chip">${escapeHtml(app.name || '')}${app.platform ? ` · ${escapeHtml(app.platform)}` : ''}</span>`).join('') : '<span class="z-help">اپلیکیشنی در PasarGuard تعریف نشده است.</span>')
+      : '<span class="z-help">لیست Applications توسط Owner اصلی مدیریت می‌شود؛ شما فقط نمایش یا عدم نمایش آن را برای کاربران خودتان تعیین می‌کنید.</span>';
+    const ownerNativeConnections = isOwner ? `
           <div class="z-toggle"><div><div class="z-toggle-title">Allow browser config</div></div><input id="z-native-browser" type="checkbox" ${cfg.allowBrowserConfig ? 'checked' : ''}></div>
           <div class="z-toggle"><div><div class="z-toggle-title">Links format</div></div><input id="z-native-links" type="checkbox" ${cfg.nativeLinks ? 'checked' : ''}></div>
-          <div class="z-toggle"><div><div class="z-toggle-title">WireGuard native format</div></div><input id="z-native-wg" type="checkbox" ${cfg.nativeWireGuard ? 'checked' : ''}></div>
+          <div class="z-toggle"><div><div class="z-toggle-title">WireGuard native format</div></div><input id="z-native-wg" type="checkbox" ${cfg.nativeWireGuard ? 'checked' : ''}></div>` : '';
+    const ownerAnnouncementFields = isOwner ? `
+          <div class="z-field"><label for="z-ann-text">متن اعلان PasarGuard</label><textarea id="z-ann-text" maxlength="128">${escapeHtml(cfg.announce)}</textarea></div>
+          <div class="z-field"><label for="z-ann-url">لینک اعلان</label><input id="z-ann-url" type="url" dir="ltr" value="${escapeHtml(cfg.announceUrl)}"></div>` : '';
+    const subtitle = isOwner
+      ? 'تنظیمات اصلی زمرد و کنترل Owner پنل'
+      : `تنظیمات فروشگاه نمایندگی ${escapeHtml(username)} — بدون دسترسی به بخش‌های Owner`;
+    const roleBadge = isOwner ? '<span class="z-role">OWNER</span>' : '<span class="z-role">RESELLER</span>';
+
+    const html = `
+      <section class="z-hero"><div class="z-hero-row"><div class="z-brand"><div class="z-logo">${icons.gem}</div><div><div class="z-title-row"><h2 class="z-title">Zomorod Template</h2><span class="z-special">SPECIAL</span>${roleBadge}</div><div class="z-subtitle">${subtitle}</div></div></div><span class="z-version">v${VERSION}</span></div></section>
+      <div class="z-content">
+        ${namespaceSection()}
+        ${resellerPathSection(profilePayload)}
+        <section class="z-card"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.sliders}</span>تنظیمات فروشگاه</h3><div class="z-card-note">نام فروشگاه و پشتیبانی ${isOwner ? 'برای تنظیمات اصلی' : 'فقط برای کاربران همین نمایندگی'} استفاده می‌شوند.</div></div></div><div class="z-grid">
+          <div class="z-field"><label for="z-store">نام فروشگاه</label><input id="z-store" type="text" maxlength="80" value="${escapeHtml(cfg.storeName)}"></div>
+          <div class="z-field"><label for="z-support">آیدی پشتیبانی</label><input id="z-support" type="text" dir="ltr" maxlength="256" placeholder="@support" value="${escapeHtml(cfg.supportId)}"><div class="z-help">@username، username یا لینک t.me / https / tg قابل استفاده است.</div></div>
+          <div class="z-toggle"><div><div class="z-toggle-title">نمایش Ping</div><div class="z-toggle-sub">نمایش پینگ تخمینی فعلی تمپلیت</div></div><input id="z-show-ping" type="checkbox" ${cfg.showPing ? 'checked' : ''}></div>
+          <div class="z-toggle"><div><div class="z-toggle-title">نمایش اپلیکیشن‌ها</div><div class="z-toggle-sub">Applications تعریف‌شده در PasarGuard</div></div><input id="z-show-apps" type="checkbox" ${cfg.showApps ? 'checked' : ''}></div>
+          <div class="z-field"><label>اپلیکیشن‌ها</label><div class="z-apps">${apps}</div></div>
         </div></section>
-        <section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.bell}</span>Special Announcement</h3><div class="z-card-note">اعلان واقعی PasarGuard با استایل و انیمیشن Emerald/Gold نمایش داده می‌شود.</div></div><span class="z-native">SPECIAL</span></div><div class="z-grid">
+        <section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.link}</span>Special Connections</h3><div class="z-card-note">${isOwner ? 'کنترل اصلی Subscription و فرمت‌های Native.' : 'فقط نمایش کانفیگ‌های کاربران خودتان؛ تنظیمات Native اصلی دست Owner باقی می‌ماند.'}</div></div><span class="z-native">SPECIAL</span></div><div class="z-grid">
+          <div class="z-toggle is-special"><div><div class="z-toggle-title">نمایش کانفیگ‌های معمولی</div><div class="z-toggle-sub">VLESS / VMess / Trojan / SS و سایر کانفیگ‌ها</div></div><input id="z-show-configs" type="checkbox" ${cfg.showConfigs ? 'checked' : ''}></div>
+          <div class="z-toggle is-special"><div><div class="z-toggle-title">نمایش WireGuard</div><div class="z-toggle-sub">فقط اگر WireGuard واقعاً داخل Subscription باشد</div></div><input id="z-show-wg" type="checkbox" ${cfg.showWireGuard ? 'checked' : ''}></div>
+          ${ownerNativeConnections}
+        </div></section>
+        <section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.bell}</span>Special Announcement</h3><div class="z-card-note">${isOwner ? 'اعلان Native پاسارگارد با استایل Emerald/Gold.' : 'متن اعلان را Owner اصلی تعیین می‌کند؛ شما نمایش، حالت و زمان‌بندی آن را برای کاربران خودتان کنترل می‌کنید.'}</div></div><span class="z-native">SPECIAL</span></div><div class="z-grid">
           <div class="z-toggle is-special"><div><div class="z-toggle-title">نمایش اعلان ویژه</div><div class="z-toggle-sub">بدون متن اعلان، کارت ساختگی نمایش داده نمی‌شود</div></div><input id="z-show-ann" type="checkbox" ${cfg.showAnnouncement ? 'checked' : ''}></div>
           <div class="z-field"><label for="z-ann-mode">حالت نمایش</label><select id="z-ann-mode"><option value="always" ${cfg.announcementMode === 'always' ? 'selected' : ''}>همیشه</option><option value="scheduled" ${cfg.announcementMode === 'scheduled' ? 'selected' : ''}>ساعت‌بندی‌شده</option></select></div>
           <div class="z-field"><label for="z-ann-times">ساعت‌ها</label><input id="z-ann-times" type="text" dir="ltr" placeholder="09:00,14:30,21:00" value="${escapeHtml(cfg.announcementTimes)}"></div>
           <div class="z-field"><label for="z-ann-duration">مدت هر نوبت (دقیقه)</label><input id="z-ann-duration" type="number" min="1" max="1440" value="${escapeHtml(cfg.announcementDuration)}"></div>
-          <div class="z-field"><label for="z-ann-text">متن اعلان PasarGuard</label><textarea id="z-ann-text" maxlength="128">${escapeHtml(cfg.announce)}</textarea></div>
-          <div class="z-field"><label for="z-ann-url">لینک اعلان</label><input id="z-ann-url" type="url" dir="ltr" value="${escapeHtml(cfg.announceUrl)}"></div>
+          ${ownerAnnouncementFields}
         </div></section>
       </div>
       <div class="z-actions"><span class="z-status" id="z-status">آماده ذخیره</span><button class="z-save" id="z-save">Save Zomorod Settings</button></div>`;
+
     const root = mountShell(html);
-    root?.querySelector('#z-save')?.addEventListener('click', () => save(settings));
+    root?.querySelector('#z-save')?.addEventListener('click', () => isOwner ? saveOwner(cachedSettings) : saveReseller());
     bindNamespaceActions(root);
+    bindOwnPath(root);
   }
 
-  async function save(settings) {
+  function renderOwner(settings) {
+    cachedSettings = settings;
+    renderForm(extractOwner(settings));
+  }
+
+  function renderReseller(payload) {
+    cachedProfile = payload;
+    renderForm(extractReseller(payload), payload);
+  }
+
+  function validateTimes() {
+    const times = value('z-ann-times');
+    if (times && !times.split(',').every((item) => /^([01]\d|2[0-3]):[0-5]\d$/.test(item.trim()))) {
+      throw new Error('فرمت ساعت باید HH:MM باشد');
+    }
+    return times;
+  }
+
+  async function saveOwner(settings) {
     const button = field('z-save');
     const statusNode = field('z-status');
-    if (!button || !statusNode) return;
+    if (!button || !statusNode || !settings) return;
     button.disabled = true;
     statusNode.className = 'z-status';
     statusNode.textContent = 'در حال ذخیره…';
     try {
-      const times = value('z-ann-times');
-      if (times && !times.split(',').every((item) => /^([01]\d|2[0-3]):[0-5]\d$/.test(item.trim()))) throw new Error('فرمت ساعت باید HH:MM باشد');
+      const times = validateTimes();
+      const support = value('z-support');
+      const normalizedSupportUrl = supportUrl(support);
       settings.subscription ||= {};
       const subscription = settings.subscription;
       const responseHeaders = { ...(subscription.response_headers || {}) };
       removeHeader(responseHeaders, 'enabled');
       removeHeader(responseHeaders, 'store-name');
       setHeader(responseHeaders, 'store-name-b64', encodeUtf8Base64(value('z-store') || defaults.storeName));
+      setHeader(responseHeaders, 'support-id-b64', encodeUtf8Base64(support));
       setHeader(responseHeaders, 'show-configs', checked('z-show-configs'));
       setHeader(responseHeaders, 'show-wireguard', checked('z-show-wg'));
       setHeader(responseHeaders, 'show-ping', checked('z-show-ping'));
@@ -407,6 +525,7 @@
       setHeader(responseHeaders, 'announcement-times', times);
       setHeader(responseHeaders, 'announcement-duration', Math.max(1, Math.min(1440, Number(value('z-ann-duration')) || 60)));
       subscription.response_headers = responseHeaders;
+      subscription.support_url = normalizedSupportUrl;
       subscription.announce = value('z-ann-text');
       subscription.announce_url = value('z-ann-url');
       subscription.allow_browser_config = checked('z-native-browser');
@@ -418,7 +537,42 @@
       statusNode.className = 'z-status ok';
       statusNode.textContent = 'ذخیره شد ✓';
     } catch (error) {
-      console.error('[Zomorod] save failed', error);
+      console.error('[Zomorod] owner save failed', error);
+      statusNode.className = 'z-status err';
+      statusNode.textContent = `خطا: ${error?.name === 'AbortError' ? 'timeout' : (error?.message || error)}`;
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function saveReseller() {
+    const button = field('z-save');
+    const statusNode = field('z-status');
+    if (!button || !statusNode) return;
+    button.disabled = true;
+    statusNode.className = 'z-status';
+    statusNode.textContent = 'در حال ذخیره…';
+    try {
+      const times = validateTimes();
+      const support = value('z-support');
+      supportUrl(support);
+      const payload = {
+        store_name: value('z-store') || currentAdmin?.username || defaults.storeName,
+        support_id: support,
+        show_configs: checked('z-show-configs'),
+        show_wireguard: checked('z-show-wg'),
+        show_ping: checked('z-show-ping'),
+        show_apps: checked('z-show-apps'),
+        show_announcement: checked('z-show-ann'),
+        announcement_mode: value('z-ann-mode') || 'always',
+        announcement_times: times,
+        announcement_duration: Math.max(1, Math.min(1440, Number(value('z-ann-duration')) || 60)),
+      };
+      cachedProfile = await api('/api/zomorod/profile', { method: 'PUT', body: JSON.stringify(payload) });
+      statusNode.className = 'z-status ok';
+      statusNode.textContent = 'تنظیمات نمایندگی ذخیره شد ✓';
+    } catch (error) {
+      console.error('[Zomorod] reseller save failed', error);
       statusNode.className = 'z-status err';
       statusNode.textContent = `خطا: ${error?.name === 'AbortError' ? 'timeout' : (error?.message || error)}`;
     } finally {
@@ -427,6 +581,11 @@
   }
 
   async function loadNamespaces() {
+    if (!isOwner) {
+      cachedNamespaces = null;
+      namespaceError = null;
+      return;
+    }
     try {
       cachedNamespaces = await api('/api/zomorod/admin-subscriptions');
       namespaceError = null;
@@ -437,18 +596,19 @@
   }
 
   async function openPage() {
-    if (!ownerAllowed) return;
-    if (active && cachedSettings) {
-      await loadNamespaces();
-      render(cachedSettings);
-      return;
-    }
+    if (!accessAllowed) return;
     active = true;
     renderLoading();
     try {
-      const [settings] = await Promise.all([api('/api/settings'), loadNamespaces()]);
-      if (!active) return;
-      render(settings);
+      if (isOwner) {
+        const [settings] = await Promise.all([api('/api/settings'), loadNamespaces()]);
+        if (!active) return;
+        renderOwner(settings);
+      } else {
+        const profile = await api('/api/zomorod/profile');
+        if (!active) return;
+        renderReseller(profile);
+      }
     } catch (error) {
       if (!active) return;
       console.error('[Zomorod] settings load failed', error);
@@ -457,7 +617,7 @@
   }
 
   function ensureTab() {
-    if (!isSettingsRoute() || !ownerResolved || !ownerAllowed) return;
+    if (!isSettingsRoute() || !accessResolved || !accessAllowed) return;
     const tabBar = findSettingsTabBar();
     if (!tabBar) return;
     if (!tabBar.dataset.zomorodBound) {
@@ -473,7 +633,7 @@
     button.type = 'button';
     button.dataset.zActive = 'false';
     button.className = 'relative flex-shrink-0 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors text-muted-foreground hover:text-foreground';
-    button.title = 'Zomorod Special — Owner only';
+    button.title = isOwner ? 'Zomorod Special — Owner controls' : 'Zomorod — Reseller store settings';
     button.innerHTML = `<div class="z-tab">${icons.gem.replace('<svg ', '<svg class="z-tab-gem" ')}<span>Zomorod</span><span class="z-tab-badge">Special</span></div>`;
     button.addEventListener('click', (event) => {
       event.preventDefault();
@@ -492,8 +652,8 @@
       document.getElementById(NAV_ID)?.remove();
       return;
     }
-    if (!ownerResolved || !ownerAllowed) {
-      removeOwnerOnlyUi();
+    if (!accessResolved || !accessAllowed) {
+      removeUi();
       return;
     }
     const tabBar = findSettingsTabBar();
@@ -506,7 +666,10 @@
       const outlet = getOutlet(tabBar);
       if (outlet) hideNativeChildren(outlet);
       setTabState(true);
-      if (!document.getElementById(ROOT_ID) && cachedSettings) render(cachedSettings);
+      if (!document.getElementById(ROOT_ID)) {
+        if (isOwner && cachedSettings) renderOwner(cachedSettings);
+        else if (!isOwner && cachedProfile) renderReseller(cachedProfile);
+      }
     }
   }
 
@@ -516,14 +679,17 @@
     requestAnimationFrame(maintain);
   }
 
-  async function resolveOwnerAccess() {
+  async function resolveAccess() {
     try {
-      const current = await api('/api/admin');
-      ownerAllowed = current?.role?.is_owner === true || current?.is_owner === true;
+      currentAdmin = await api('/api/admin');
+      accessAllowed = Boolean(currentAdmin?.id || currentAdmin?.username);
+      isOwner = currentAdmin?.role?.is_owner === true || currentAdmin?.is_owner === true;
     } catch (_) {
-      ownerAllowed = false;
+      currentAdmin = null;
+      accessAllowed = false;
+      isOwner = false;
     } finally {
-      ownerResolved = true;
+      accessResolved = true;
       scheduleMaintain();
     }
   }
@@ -533,9 +699,9 @@
   const observer = new MutationObserver(scheduleMaintain);
   observer.observe(document.documentElement, { subtree: true, childList: true });
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => { resolveOwnerAccess(); scheduleMaintain(); }, { once: true });
+    document.addEventListener('DOMContentLoaded', () => { resolveAccess(); scheduleMaintain(); }, { once: true });
   } else {
-    resolveOwnerAccess();
+    resolveAccess();
     scheduleMaintain();
   }
 })();
