@@ -121,7 +121,7 @@ original=path.read_text(encoding='utf-8')
 tag=f'<script id="{marker}" src="/statics/zomorod-special.js?v={version}" defer></script>'
 pattern=re.compile(rf'<script\s+id=["\']{re.escape(marker)}["\'][^>]*>\s*</script>', re.I)
 if pattern.search(original): text=pattern.sub(tag, original, count=1)
-elif re.search(r'</body>', original, re.I): text=re.sub(r'</body>', f'  {tag}\n</body>', original, count=1, flags=re.I)
+elif re.search(r'</body>', original, re.I): text=re.sub(r'</body>', lambda _m: f'  {tag}\n</body>', original, count=1, flags=re.I)
 else: text=original+'\n'+tag+'\n'
 if text != original: path.write_text(text, encoding='utf-8')
 PY
@@ -139,7 +139,7 @@ original=path.read_text(encoding='utf-8')
 tag=f'<script id="{marker}" src="/statics/zomorod-special.js?v={version}" defer></script>'
 pattern=re.compile(rf'<script\s+id=["\']{re.escape(marker)}["\'][^>]*>\s*</script>', re.I)
 if pattern.search(original): text=pattern.sub(tag, original, count=1)
-elif re.search(r'</body>', original, re.I): text=re.sub(r'</body>', f'  {tag}\n</body>', original, count=1, flags=re.I)
+elif re.search(r'</body>', original, re.I): text=re.sub(r'</body>', lambda _m: f'  {tag}\n</body>', original, count=1, flags=re.I)
 else: text=original+'\n'+tag+'\n'
 if text != original: path.write_text(text, encoding='utf-8')
 PY
@@ -155,7 +155,7 @@ template=Path(sys.argv[1]); runtime=Path(sys.argv[2]); marker=sys.argv[3]
 original=template.read_text(encoding='utf-8'); js=runtime.read_text(encoding='utf-8')
 text=re.sub(rf'\s*<script id=["\']{re.escape(marker)}["\']>.*?</script>\s*', '\n', original, flags=re.S|re.I)
 block=f'\n<script id="{marker}">\n{js}\n</script>\n'
-if re.search(r'</body>', text, re.I): text=re.sub(r'</body>', block+'</body>', text, count=1, flags=re.I)
+if re.search(r'</body>', text, re.I): text=re.sub(r'</body>', lambda _m: block+'</body>', text, count=1, flags=re.I)
 else: text += block
 if text != original: template.write_text(text, encoding='utf-8')
 PY
