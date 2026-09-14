@@ -1,13 +1,14 @@
 [Unit]
-Description=Persistent verified Zomorod/HS integration guard for PasarGuard
+Description=Persistent Zomorod integration guard for PasarGuard
 After=docker.service network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/bin/bash -lc 'set -u; while true; do found=0; if command -v docker >/dev/null 2>&1; then for cid in $(docker ps -q 2>/dev/null); do image=$(docker inspect -f "{{.Config.Image}}" "$cid" 2>/dev/null || true); case "$image" in *pasarguard/panel*) found=1; project=$(docker inspect -f "{{ index .Config.Labels \"com.docker.compose.project\" }}" "$cid" 2>/dev/null || true); [ -n "$project" ] || project=pasarguard; echo "[Plugin Guard] reconciling ${cid:0:12} compose-project=$project"; if [ -x /opt/zomorod/plugin/integrate-dashboard.sh ]; then PASARGUARD_COMPOSE_PROJECT="$project" /opt/zomorod/plugin/integrate-dashboard.sh || true; fi; if [ -x /opt/hs-pg/plugin/integrate-dashboard.sh ]; then PASARGUARD_COMPOSE_PROJECT="$project" /opt/hs-pg/plugin/integrate-dashboard.sh || true; fi ;; esac; done; fi; if [ "$found" -eq 0 ]; then [ -x /opt/zomorod/plugin/integrate-dashboard.sh ] && /opt/zomorod/plugin/integrate-dashboard.sh || true; [ -x /opt/hs-pg/plugin/integrate-dashboard.sh ] && /opt/hs-pg/plugin/integrate-dashboard.sh || true; fi; sleep 10; done'
+ExecStart=/opt/zomorod/plugin/zomorod-guard.sh
 Restart=always
-RestartSec=2s
+RestartSec=3s
+TimeoutStopSec=15s
 User=root
 Group=root
 
