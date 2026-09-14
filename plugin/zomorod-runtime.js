@@ -83,7 +83,7 @@
     #${SUPPORT_ID}:hover{transform:translateY(-1px);border-color:rgba(16,185,129,.38);background:linear-gradient(135deg,rgba(16,185,129,.12),rgba(184,134,11,.11))}
     #${SUPPORT_ID} .zomorod-support-gem{color:#059669;font-size:.78rem;line-height:1}
     #${SUPPORT_ID} .zomorod-support-label{max-width:128px;overflow:hidden;text-overflow:ellipsis}
-    @media(max-width:560px){#${SUPPORT_ID}{padding:.42rem .52rem}#${SUPPORT_ID} .zomorod-support-value{display:none}}
+    @media(max-width:560px){ #${SUPPORT_ID}{padding:.42rem .52rem}#${SUPPORT_ID} .zomorod-support-value{display:none}}
     @keyframes zomorodAnnSweep{
       0%,12%{left:-52%;opacity:0}
       22%{opacity:1}
