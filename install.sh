@@ -28,13 +28,14 @@ After the first install:
   sudo zomorod update
 
 Safety:
-  The installer restarts only the PasarGuard panel through PasarGuard's official CLI.
-  It never calls Docker restart/down/up/recreate directly and never reboots the server.
+  The installer may restart only the PasarGuard panel through PasarGuard's official CLI.
+  It never calls raw Docker restart/down/up/recreate commands and never reboots the server.
   Use --no-restart to defer the panel restart when needed.
 
 Examples:
   install.sh
-  install.sh --lang fa
+  install.sh --no-restart
+  install.sh --lang en
   install.sh --version v4.0.0
 EOF
 }
@@ -60,7 +61,7 @@ trap cleanup EXIT
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    update|--update) MODE="update"; VERSION="latest"; SOURCE_REF="main"; shift ;;
+    update|--update) MODE="update"; VERSION="latest"; shift ;;
     --no-restart) RESTART_PANEL="never"; shift ;;
     --lang) [[ $# -ge 2 ]] || fail "--lang needs a value"; LANG_CODE="$2"; shift 2 ;;
     --version) [[ $# -ge 2 ]] || fail "--version needs a value"; VERSION="$2"; shift 2 ;;
@@ -77,7 +78,10 @@ command -v python3 >/dev/null 2>&1 || fail "python3 is required"
 
 TMP_DIR="$(mktemp -d)"
 BACKUP_DIR="${ZOMOROD_ROOT}/backups/$(date +%Y%m%d-%H%M%S)"
-mkdir -p "${BACKUP_DIR}" "${ZOMOROD_ROOT}/plugin" "${ZOMOROD_ROOT}/backend" "${TEMPLATE_DIR}" "/var/lib/pasarguard/zomorod"
+install -d -m 0755 "${ZOMOROD_ROOT}" "${ZOMOROD_ROOT}/plugin" "${ZOMOROD_ROOT}/backend"
+install -d -m 0700 "${ZOMOROD_ROOT}/backups" "${BACKUP_DIR}" "/var/lib/pasarguard/zomorod"
+install -d -m 0755 "${TEMPLATE_DIR}"
+chmod 0700 "${ZOMOROD_ROOT}/backups" "${BACKUP_DIR}" "/var/lib/pasarguard/zomorod" || true
 
 if command -v curl >/dev/null 2>&1; then
   download() { curl -fL --show-error --connect-timeout 20 --max-time 120 --retry 3 --retry-delay 2 -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' "$1" -o "$2"; }
@@ -87,21 +91,21 @@ else
   fail "curl or wget is required"
 fi
 
-raw_url() { printf 'https://raw.githubusercontent.com/%s/%s/%s/%s?zomorod=%s' "${REPO_OWNER}" "${REPO_NAME}" "${SOURCE_REF}" "$1" "$(date +%s)"; }
+raw_url() { printf 'https://raw.githubusercontent.com/%s/%s/%s/%s?zomorod=%s' "${REPO_OWNER}" "${REPO_NAME}" "${SOURCE_REF}" "$1" "$(date +%s%N)"; }
+
+backup_file() {
+  local source="$1" target="$2"
+  [[ -f "${source}" ]] || return 0
+  cp -a "${source}" "${target}" || { warn "could not back up ${source}"; return 0; }
+  chmod 0600 "${target}" 2>/dev/null || true
+}
 
 backup_existing() {
   log "backing up existing Zomorod/PasarGuard files"
-  if [[ -f "${TEMPLATE_FILE}" ]]; then
-    cp -a "${TEMPLATE_FILE}" "${BACKUP_DIR}/subscription-index.html" || warn "could not back up subscription template; continuing update"
-  fi
-  if [[ -f "${ENV_FILE}" ]]; then
-    cp -a "${ENV_FILE}" "${BACKUP_DIR}/pasarguard.env" || warn "could not back up PasarGuard .env; continuing update"
-  fi
-  if [[ -f "/var/lib/pasarguard/zomorod/admin-subscriptions.json" ]]; then
-    cp -a "/var/lib/pasarguard/zomorod/admin-subscriptions.json" "${BACKUP_DIR}/admin-subscriptions.json" || warn "could not back up namespace state; continuing update"
-  fi
+  backup_file "${TEMPLATE_FILE}" "${BACKUP_DIR}/subscription-index.html"
+  backup_file "${ENV_FILE}" "${BACKUP_DIR}/pasarguard.env"
+  backup_file "/var/lib/pasarguard/zomorod/admin-subscriptions.json" "${BACKUP_DIR}/admin-subscriptions.json"
   log "backup stage complete"
-  return 0
 }
 
 install_repo_prebuilt() {
@@ -165,20 +169,34 @@ install_template() {
 
 install_plugin_files() {
   local file
-  log "downloading Zomorod plugin and backend files"
-  for file in plugin/zomorod-special.js plugin/zomorod-runtime.js plugin/integrate-dashboard.sh backend/zomorod_admin_subscriptions.py; do
+  log "downloading Zomorod plugin, guard and backend files"
+  for file in \
+    plugin/zomorod-special.js \
+    plugin/zomorod-runtime.js \
+    plugin/integrate-dashboard.sh \
+    plugin/zomorod-guard.sh \
+    backend/zomorod_admin_subscriptions.py; do
     download "$(raw_url "${file}")" "${TMP_DIR}/$(basename "${file}")" || fail "could not download ${file}"
   done
+
+  command -v node >/dev/null 2>&1 && {
+    node --check "${TMP_DIR}/zomorod-special.js" || fail "zomorod-special.js validation failed"
+    node --check "${TMP_DIR}/zomorod-runtime.js" || fail "zomorod-runtime.js validation failed"
+  }
+  python3 -m py_compile "${TMP_DIR}/zomorod_admin_subscriptions.py" || fail "backend validation failed"
+  bash -n "${TMP_DIR}/integrate-dashboard.sh" "${TMP_DIR}/zomorod-guard.sh" || fail "integration script validation failed"
+
   install -m 0644 "${TMP_DIR}/zomorod-special.js" "${ZOMOROD_ROOT}/plugin/zomorod-special.js"
   install -m 0644 "${TMP_DIR}/zomorod-runtime.js" "${ZOMOROD_ROOT}/plugin/zomorod-runtime.js"
   install -m 0755 "${TMP_DIR}/integrate-dashboard.sh" "${ZOMOROD_ROOT}/plugin/integrate-dashboard.sh"
+  install -m 0755 "${TMP_DIR}/zomorod-guard.sh" "${ZOMOROD_ROOT}/plugin/zomorod-guard.sh"
   install -m 0644 "${TMP_DIR}/zomorod_admin_subscriptions.py" "${ZOMOROD_ROOT}/backend/zomorod_admin_subscriptions.py"
 }
 
 install_cli() {
-  log "installing Zomorod update command"
+  log "installing Zomorod update/status command"
   download "$(raw_url cli/zomorod)" "${TMP_DIR}/zomorod-cli" || fail "could not download cli/zomorod"
-  chmod +x "${TMP_DIR}/zomorod-cli"
+  bash -n "${TMP_DIR}/zomorod-cli" || fail "cli/zomorod validation failed"
   install -m 0755 "${TMP_DIR}/zomorod-cli" /usr/local/bin/zomorod
 }
 
@@ -201,86 +219,87 @@ install_systemd_units() {
   command -v systemctl >/dev/null 2>&1 || { warn "systemd not detected; integration will run once only"; return 0; }
   log "updating Zomorod host-level persistence guard"
   local unit
-  for unit in zomorod-integrator.service zomorod-integrator.path zomorod-integrator.timer; do
+  for unit in zomorod-integrator.service zomorod-integrator.timer; do
     download "$(raw_url "systemd/${unit}")" "${TMP_DIR}/${unit}" || fail "could not download systemd/${unit}"
     install -m 0644 "${TMP_DIR}/${unit}" "/etc/systemd/system/${unit}"
   done
+
+  # The old Path unit watched a host dashboard path that does not exist on the
+  # standard container deployment. The container-aware guard supersedes it.
+  systemctl disable --now zomorod-integrator.path >/dev/null 2>&1 || true
+  rm -f /etc/systemd/system/zomorod-integrator.path
+
   systemctl daemon-reload
-  systemctl enable --now zomorod-integrator.path >/dev/null 2>&1 || warn "path watcher could not be enabled"
-  systemctl enable zomorod-integrator.timer >/dev/null 2>&1 || warn "fallback timer could not be enabled"
-  systemctl restart zomorod-integrator.timer >/dev/null 2>&1 || warn "fallback timer could not be restarted"
-  # Start the persistent Docker lifecycle listener before PasarGuard is restarted.
-  # It lives on the host, so it survives panel container replacement and can
-  # re-inject Zomorod (and HS-PG when installed) into the newly created container.
   systemctl enable zomorod-integrator.service >/dev/null 2>&1 || true
   systemctl restart zomorod-integrator.service >/dev/null 2>&1 || warn "persistence guard could not be started immediately"
+  systemctl enable zomorod-integrator.timer >/dev/null 2>&1 || warn "fallback timer could not be enabled"
+  systemctl restart zomorod-integrator.timer >/dev/null 2>&1 || warn "fallback timer could not be restarted"
 }
 
 safe_restart_pasarguard() {
   if [[ "${RESTART_PANEL}" == "never" ]]; then
-    warn "PasarGuard restart skipped by --no-restart; admin subscription routes will activate on the next normal panel restart"
+    warn "PasarGuard restart skipped by --no-restart; newly patched Python routes activate on the next normal panel restart"
     return 0
   fi
 
   local pasarguard_cli
-  pasarguard_cli="$(command -v pasarguard)" || true
+  pasarguard_cli="$(command -v pasarguard || true)"
   if [[ -z "${pasarguard_cli}" || ! -x "${pasarguard_cli}" ]]; then
-    warn "official pasarguard CLI was not found; no raw Docker fallback will be used"
-    warn "run the official PasarGuard panel restart command later to activate Python routes"
+    warn "official pasarguard CLI was not found; refusing any raw Docker lifecycle fallback"
+    warn "use the official PasarGuard restart command later if a new Python route needs activation"
     return 0
   fi
 
   log "restarting only the PasarGuard panel through its official CLI"
   if ! "${pasarguard_cli}" restart; then
-    warn "official PasarGuard restart failed; installation is kept and routes will activate after a later successful panel restart"
+    warn "official PasarGuard restart failed; installation is kept and the persistence guard remains active"
     return 0
   fi
 
   log "waiting for PasarGuard to become available again"
   local attempt ready=0
-  for attempt in $(seq 1 20); do
+  for attempt in $(seq 1 30); do
     if "${pasarguard_cli}" status >/dev/null 2>&1; then
       ready=1
       break
     fi
     sleep 1
   done
-  [[ "${ready}" -eq 1 ]] || warn "PasarGuard status did not report ready yet; continuing with integration retries"
+  [[ "${ready}" -eq 1 ]] || warn "PasarGuard status did not report ready yet; continuing with safe integration retries"
 
   log "re-applying Zomorod integration after the safe panel restart"
   for attempt in $(seq 1 15); do
-    "${ZOMOROD_ROOT}/plugin/integrate-dashboard.sh" >/dev/null 2>&1 || true
-    if [[ -x /opt/hs-pg/plugin/integrate-dashboard.sh ]]; then
-      /opt/hs-pg/plugin/integrate-dashboard.sh >/dev/null 2>&1 || true
-    fi
-    if command -v systemctl >/dev/null 2>&1; then
-      systemctl is-active --quiet zomorod-integrator.service && {
-        log "host persistence guard is active after PasarGuard restart"
-        return 0
-      }
-    else
+    if "${ZOMOROD_ROOT}/plugin/integrate-dashboard.sh" >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
   done
+  warn "PasarGuard restarted; the host guard will keep reconciling Zomorod in the background"
+}
 
-  warn "PasarGuard restarted; integration guard will continue reconciling in the background"
-  return 0
+record_installed_ref() {
+  printf '%s\n' "${SOURCE_REF}" > "${ZOMOROD_ROOT}/.installed-ref"
+  chmod 0644 "${ZOMOROD_ROOT}/.installed-ref" || true
 }
 
 main() {
-  if [[ "${MODE}" == "update" ]]; then log "updating Zomorod from latest main (cache bypass enabled)"; else log "installing Zomorod"; fi
+  if [[ "${MODE}" == "update" ]]; then
+    log "updating Zomorod from ${SOURCE_REF} (cache bypass enabled)"
+  else
+    log "installing Zomorod from ${SOURCE_REF}"
+  fi
+
   backup_existing
   install_template
   install_plugin_files
   install_cli
   configure_pasarguard
   install_systemd_units
+  record_installed_ref
 
-  log "activating Zomorod integration before the panel restart"
-  if ! "${ZOMOROD_ROOT}/plugin/integrate-dashboard.sh"; then warn "initial live integration is pending and will be retried automatically"; fi
-  if [[ -x /opt/hs-pg/plugin/integrate-dashboard.sh ]]; then
-    /opt/hs-pg/plugin/integrate-dashboard.sh >/dev/null 2>&1 || warn "HS-PG reintegration is pending; host guard will retry it"
+  log "activating Zomorod integration before any optional panel restart"
+  if ! "${ZOMOROD_ROOT}/plugin/integrate-dashboard.sh"; then
+    warn "initial live integration is pending and will be retried automatically by the Zomorod guard"
   fi
 
   safe_restart_pasarguard
@@ -291,14 +310,14 @@ main() {
   printf '  • Plugin files:          %s\n' "${ZOMOROD_ROOT}/plugin"
   printf '  • Backend addon:         %s\n' "${ZOMOROD_ROOT}/backend/zomorod_admin_subscriptions.py"
   printf '  • Namespace data:        %s\n' "/var/lib/pasarguard/zomorod/admin-subscriptions.json"
-  printf '  • Backup:                %s\n' "${BACKUP_DIR}"
+  printf '  • Backup:                %s (private)\n' "${BACKUP_DIR}"
   printf '  • Settings tab:          Zomorod · Special (Owner + reseller scoped)\n'
   printf '  • Theme storage:         isolated as zomorod-theme\n'
-  printf '  • Persistence:           host systemd guard + Docker start event reconciliation\n'
-  printf '  • Service lifecycle:     safe PasarGuard CLI restart only; no raw Docker lifecycle commands\n'
+  printf '  • Persistence:           container-aware host guard + periodic health check\n'
+  printf '  • Service lifecycle:     official PasarGuard CLI only; no raw Docker lifecycle commands\n'
   printf '  • Update command:        sudo zomorod update\n'
-  printf '\nOwner-only /sub/<admin>/<subscription-hash> routes are activated by the safe PasarGuard restart when its official CLI is available.\n'
-  printf 'Open PasarGuard → Settings → Zomorod to manage namespaces and preferences.\n'
+  printf '  • Health command:        zomorod status\n'
+  printf '\nOpen PasarGuard → Settings → Zomorod to manage namespaces and preferences.\n'
 }
 
 main "$@"
