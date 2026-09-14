@@ -3,15 +3,18 @@ set -Eeuo pipefail
 
 REPO="PEDIHS/zomorod-template"
 API="https://api.github.com/repos/${REPO}/commits/main"
+ROOT="/opt/zomorod"
+TEMPLATE="/var/lib/pasarguard/templates/subscription/index.html"
 
 usage() {
   cat <<'EOF'
 Zomorod command
 
 Usage:
-  sudo zomorod update          Resolve latest main commit and apply that exact snapshot
-  zomorod version              Show locally installed plugin version
-  zomorod status               Show installed files and integration status
+  sudo zomorod update [--no-restart]  Resolve latest main commit and apply that exact snapshot
+  zomorod version                     Show locally installed plugin version/ref
+  zomorod status                      Verify installed files and live PasarGuard integration
+  zomorod doctor                      Alias for status
 EOF
 }
 
@@ -31,9 +34,138 @@ resolve_main_sha() {
 reactivate_persistence_guard() {
   command -v systemctl >/dev/null 2>&1 || return 0
   run_root systemctl daemon-reload >/dev/null 2>&1 || true
+  run_root systemctl enable zomorod-integrator.service >/dev/null 2>&1 || true
+  run_root systemctl restart zomorod-integrator.service >/dev/null 2>&1 || true
   run_root systemctl enable zomorod-integrator.timer >/dev/null 2>&1 || true
   run_root systemctl restart zomorod-integrator.timer >/dev/null 2>&1 || true
-  run_root systemctl restart zomorod-integrator.service >/dev/null 2>&1 || true
+}
+
+panel_containers() {
+  command -v docker >/dev/null 2>&1 || return 0
+  docker ps --format '{{.ID}}|{{.Image}}|{{.Names}}' 2>/dev/null | awk -F'|' '$2 ~ /^pasarguard\/panel([:@]|$)/ {print}'
+}
+
+container_build() {
+  local cid="$1" found
+  for found in /code/dashboard/build /app/dashboard/build /opt/pasarguard/dashboard/build; do
+    if docker exec "${cid}" test -f "${found}/index.html" >/dev/null 2>&1; then printf '%s\n' "${found}"; return 0; fi
+  done
+  found="$(docker exec "${cid}" sh -c "find /code /app /opt -maxdepth 6 -type f -path '*/dashboard/build/index.html' -print -quit 2>/dev/null" 2>/dev/null || true)"
+  [[ -n "${found}" ]] && printf '%s\n' "${found%/index.html}"
+}
+
+container_subscription_template() {
+  local cid="$1" found
+  for found in /code/app/templates/subscription/index.html /app/app/templates/subscription/index.html /opt/pasarguard/app/templates/subscription/index.html; do
+    if docker exec "${cid}" test -f "${found}" >/dev/null 2>&1; then printf '%s\n' "${found}"; return 0; fi
+  done
+  docker exec "${cid}" sh -c "find /code /app /opt -maxdepth 6 -type f -path '*/app/templates/subscription/index.html' -print -quit 2>/dev/null" 2>/dev/null || true
+}
+
+probe_backend_route() {
+  local cid="$1" env port ssl scheme result
+  env="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "${cid}" 2>/dev/null || true)"
+  port="$(awk -F= '$1=="UVICORN_PORT"{print $2; exit}' <<<"${env}")"
+  [[ "${port}" =~ ^[0-9]+$ ]] || port=8000
+  ssl="$(awk -F= '$1=="UVICORN_SSL_CERTFILE"{sub(/^[^=]*=/,""); print; exit}' <<<"${env}")"
+  scheme=http; [[ -n "${ssl}" ]] && scheme=https
+
+  result="$(python3 - "${scheme}" "${port}" <<'PY'
+import ssl, sys, urllib.error, urllib.request
+scheme, port = sys.argv[1], sys.argv[2]
+ctx = ssl._create_unverified_context() if scheme == 'https' else None
+url = f'{scheme}://127.0.0.1:{port}/api/zomorod/profile'
+try:
+    response = urllib.request.urlopen(url, timeout=4, context=ctx)
+    print(response.status)
+except urllib.error.HTTPError as exc:
+    print(exc.code)
+except Exception:
+    print('unreachable')
+PY
+)"
+  case "${result}" in
+    200|401|403) printf 'active (%s)\n' "${result}" ;;
+    404) printf 'missing (404)\n' ;;
+    unreachable) printf 'unreachable\n' ;;
+    *) printf 'unhealthy (%s)\n' "${result}" ;;
+  esac
+}
+
+show_version() {
+  local file="${ROOT}/plugin/zomorod-special.js" ref='unknown' version='unknown'
+  [[ -f "${file}" ]] || { echo 'Zomorod is not installed'; return 1; }
+  version="$(grep -m1 "const VERSION" "${file}" | sed -E "s/.*'([^']+)'.*/\1/" || true)"
+  [[ -s "${ROOT}/.installed-ref" ]] && ref="$(head -n1 "${ROOT}/.installed-ref")"
+  echo "Zomorod ${version:-unknown}"
+  echo "Installed ref: ${ref}"
+}
+
+show_status() {
+  local plugin="${ROOT}/plugin/zomorod-special.js" runtime="${ROOT}/plugin/zomorod-runtime.js"
+  local backend="${ROOT}/backend/zomorod_admin_subscriptions.py" guard="${ROOT}/plugin/zomorod-guard.sh"
+  local plugin_sha='' plugin_v='' rows='' cid image name build remote_sha loader template_path template_sha live_template_sha route
+
+  echo "Zomorod root: ${ROOT}"
+  if [[ -s "${plugin}" ]]; then
+    plugin_sha="$(sha256sum "${plugin}" | awk '{print $1}')"
+    plugin_v="${plugin_sha:0:12}"
+    echo "Plugin: installed (${plugin_v})"
+  else
+    echo 'Plugin: missing'
+  fi
+  [[ -s "${runtime}" ]] && echo 'Subscription runtime: installed' || echo 'Subscription runtime: missing'
+  [[ -s "${backend}" ]] && echo 'Admin namespaces backend: installed' || echo 'Admin namespaces backend: missing'
+  [[ -x "${guard}" ]] && echo 'Container guard: installed' || echo 'Container guard: missing'
+  [[ -s "${TEMPLATE}" ]] && echo 'Subscription template: installed' || echo 'Subscription template: missing'
+  [[ -s "${ROOT}/.installed-ref" ]] && echo "Installed ref: $(head -n1 "${ROOT}/.installed-ref")"
+
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl is-active --quiet zomorod-integrator.service && echo 'Persistence guard: active' || echo 'Persistence guard: inactive'
+    systemctl is-enabled --quiet zomorod-integrator.timer 2>/dev/null && echo 'Fallback timer: enabled' || echo 'Fallback timer: not enabled'
+  fi
+
+  rows="$(panel_containers || true)"
+  if [[ -z "${rows}" ]]; then
+    echo 'PasarGuard container: not detected'
+    return 0
+  fi
+
+  while IFS='|' read -r cid image name; do
+    [[ -n "${cid}" ]] || continue
+    echo "---"
+    echo "PasarGuard container: ${name:-${cid:0:12}} (${cid:0:12})"
+    build="$(container_build "${cid}" || true)"
+    if [[ -n "${build}" && -n "${plugin_sha}" ]]; then
+      remote_sha="$(docker exec "${cid}" sha256sum "${build}/statics/zomorod-special.js" 2>/dev/null | awk '{print $1}' || true)"
+      loader="$(docker exec "${cid}" sh -c "grep -F 'id=\"zomorod-special-loader\"' '${build}/index.html' 2>/dev/null | head -n1" 2>/dev/null || true)"
+      if [[ "${remote_sha}" == "${plugin_sha}" && "${loader}" == *"v=${plugin_v}"* ]]; then
+        echo "Dashboard injection: healthy (${build})"
+      else
+        echo "Dashboard injection: missing/stale (${build})"
+      fi
+    else
+      echo 'Dashboard injection: build not found'
+    fi
+
+    template_path="$(container_subscription_template "${cid}" || true)"
+    if [[ -n "${template_path}" ]]; then
+      live_template_sha="$(docker exec "${cid}" sha256sum "${template_path}" 2>/dev/null | awk '{print $1}' || true)"
+      template_sha="$(sha256sum "${TEMPLATE}" 2>/dev/null | awk '{print $1}' || true)"
+      if docker exec "${cid}" grep -q 'zomorod-runtime-inline' "${template_path}" >/dev/null 2>&1 && [[ -n "${template_sha}" && "${live_template_sha}" == "${template_sha}" ]]; then
+        echo "Subscription injection: healthy (${template_path})"
+      elif docker exec "${cid}" grep -q 'zomorod-runtime-inline' "${template_path}" >/dev/null 2>&1; then
+        echo "Subscription injection: active but host/live files differ (${template_path})"
+      else
+        echo "Subscription injection: missing (${template_path})"
+      fi
+    else
+      echo 'Subscription injection: template not found'
+    fi
+
+    route="$(probe_backend_route "${cid}")"
+    echo "Backend route: ${route}"
+  done <<<"${rows}"
 }
 
 case "${1:-}" in
@@ -44,45 +176,26 @@ case "${1:-}" in
     tmp="$(mktemp /tmp/zomorod-update.XXXXXX.sh)"
     trap 'rm -f "$tmp"' EXIT
 
-    echo "[Zomorod] resolving latest main commit..."
+    echo '[Zomorod] resolving latest main commit...'
     sha="$(resolve_main_sha)"
-    [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo '[Zomorod] could not resolve latest main SHA' >&2; exit 1; }
-    echo "[Zomorod] latest commit: $sha"
+    [[ "${sha}" =~ ^[0-9a-f]{40}$ ]] || { echo '[Zomorod] could not resolve latest main SHA' >&2; exit 1; }
+    echo "[Zomorod] latest commit: ${sha}"
 
     raw="https://raw.githubusercontent.com/${REPO}/${sha}/install.sh"
     curl -fL --show-error --connect-timeout 20 --max-time 120 --retry 3 --retry-delay 2 \
-      "$raw" -o "$tmp"
-    grep -q 'Zomorod Template + Special Plugin installer' "$tmp" || { echo '[Zomorod] invalid installer received' >&2; exit 1; }
+      -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' "${raw}" -o "${tmp}"
+    grep -q 'Zomorod Template + Special Plugin installer' "${tmp}" || { echo '[Zomorod] invalid installer received' >&2; exit 1; }
 
-    # Pin every file downloaded by the installer to the same immutable commit.
-    sed -i "s/^SOURCE_REF=\"main\"$/SOURCE_REF=\"${sha}\"/" "$tmp"
-    grep -q "^SOURCE_REF=\"${sha}\"$" "$tmp" || { echo '[Zomorod] could not pin installer source ref' >&2; exit 1; }
+    sed -i "s/^SOURCE_REF=\"main\"$/SOURCE_REF=\"${sha}\"/" "${tmp}"
+    grep -q "^SOURCE_REF=\"${sha}\"$" "${tmp}" || { echo '[Zomorod] could not pin installer source ref' >&2; exit 1; }
 
-    echo "[Zomorod] applying immutable snapshot..."
-    run_root bash "$tmp" "$@"
-
-    # The official PasarGuard restart may replace the container. Re-arm the
-    # host-level guard immediately so dashboard plugins are injected again into
-    # the new container without waiting for the periodic timer.
+    echo '[Zomorod] applying immutable snapshot...'
+    run_root bash "${tmp}" --update "$@"
     reactivate_persistence_guard
-
-    echo "[Zomorod] update finished at commit $sha. Persistent integration guard is active."
+    echo "[Zomorod] update finished at commit ${sha}."
     ;;
-  version)
-    file="/opt/zomorod/plugin/zomorod-special.js"
-    [[ -f "$file" ]] || { echo 'Zomorod is not installed'; exit 1; }
-    grep -m1 "const VERSION" "$file" | sed -E "s/.*'([^']+)'.*/Zomorod \\1/"
-    ;;
-  status)
-    echo "Zomorod root: /opt/zomorod"
-    test -s /opt/zomorod/plugin/zomorod-special.js && echo 'Plugin: installed' || echo 'Plugin: missing'
-    test -s /opt/zomorod/backend/zomorod_admin_subscriptions.py && echo 'Admin namespaces backend: installed' || echo 'Admin namespaces backend: missing'
-    test -s /var/lib/pasarguard/templates/subscription/index.html && echo 'Subscription template: installed' || echo 'Subscription template: missing'
-    if command -v systemctl >/dev/null 2>&1; then
-      systemctl is-active zomorod-integrator.service >/dev/null 2>&1 && echo 'Persistence guard: active' || echo 'Persistence guard: inactive'
-      systemctl is-enabled zomorod-integrator.timer >/dev/null 2>&1 && echo 'Self-heal timer: enabled' || echo 'Self-heal timer: not enabled'
-    fi
-    ;;
+  version) show_version ;;
+  status|doctor) show_status ;;
   -h|--help|help|'') usage ;;
   *) echo "Unknown command: $1" >&2; usage >&2; exit 2 ;;
 esac
