@@ -42,6 +42,7 @@ jobs:
 
       - name: Validate browser integration JavaScript
         run: |
+          set -euo pipefail
           node --check plugin/zomorod-special.js
           node --check plugin/zomorod-runtime.js
           grep -q '/api/zomorod/profile' plugin/zomorod-special.js
@@ -50,6 +51,7 @@ jobs:
 
       - name: Validate Python backend addon
         run: |
+          set -euo pipefail
           python3 -m py_compile backend/zomorod_admin_subscriptions.py
           grep -q 'admin_slug:zslug' backend/zomorod_admin_subscriptions.py
           grep -q 'db_user.*admin_id' backend/zomorod_admin_subscriptions.py
@@ -61,22 +63,30 @@ jobs:
 
       - name: Validate shell scripts
         run: |
+          set -euo pipefail
           bash -n install.sh
           bash -n uninstall.sh
           bash -n plugin/integrate-dashboard.sh
+          bash -n plugin/zomorod-guard.sh
+          bash -n cli/zomorod
 
-      - name: Enforce official-only PasarGuard restart safety
+      - name: Enforce lifecycle and plugin isolation safety
         run: |
           set -euo pipefail
-          files=(install.sh plugin/integrate-dashboard.sh)
+          files=(install.sh plugin/integrate-dashboard.sh plugin/zomorod-guard.sh cli/zomorod)
           forbidden='docker[[:space:]]+(restart|stop|kill|rm)([[:space:]]|$)|docker[[:space:]]+compose[^\n]*(up|down|restart|stop|kill|rm)([[:space:]]|$)|pasarguard[[:space:]]+(down|up)([[:space:]]|$)|systemctl[[:space:]]+restart[[:space:]]+pasarguard'
           if grep -En "$forbidden" "${files[@]}"; then
-            echo 'Unsafe direct service lifecycle command found in install/integration path.' >&2
+            echo 'Unsafe direct PasarGuard/Docker lifecycle command found.' >&2
+            exit 1
+          fi
+          if grep -En '/opt/hs-pg|hs-pg-integrator|HS-PG' install.sh plugin/zomorod-guard.sh systemd/zomorod-integrator.service; then
+            echo 'Zomorod persistence must remain independent from HS-PG.' >&2
             exit 1
           fi
           grep -q 'pasarguard_cli' install.sh
-          grep -q 'restart' install.sh
           grep -q -- '--no-restart' install.sh
+          grep -q 'PASARGUARD_CONTAINER_ID' plugin/integrate-dashboard.sh
+          grep -q 'zomorod doctor' README.md
 
       - name: Test self-healing integration idempotency
         run: |
@@ -95,7 +105,9 @@ jobs:
           cp backend/zomorod_admin_subscriptions.py "$sandbox/zomorod/backend/zomorod_admin_subscriptions.py"
           chmod +x "$sandbox/zomorod/plugin/integrate-dashboard.sh"
 
-          printf '<!doctype html><html><head></head><body>dashboard</body></html>\n' > "$sandbox/pasarguard/dashboard/build/index.html"
+          cat > "$sandbox/pasarguard/dashboard/build/index.html" <<'HTML'
+          <!doctype html><html><head><script id="zomorod-pasarguard-theme-guard">legacy()</script></head><body>dashboard</body></html>
+          HTML
           cp "$sandbox/pasarguard/dashboard/build/index.html" "$sandbox/pasarguard/dashboard/build/404.html"
           printf '<!doctype html><html><body>subscription</body></html>\n' > "$sandbox/templates/subscription/index.html"
           cat > "$sandbox/pasarguard/app/routers/__init__.py" <<'PY'
@@ -106,21 +118,18 @@ jobs:
               api_router.include_router(router)
           PY
 
-          sudo env \
-            ZOMOROD_ROOT="$sandbox/zomorod" \
-            PASARGUARD_ROOT="$sandbox/pasarguard" \
-            SUB_TEMPLATE="$sandbox/templates/subscription/index.html" \
-            "$sandbox/zomorod/plugin/integrate-dashboard.sh"
+          run_integrator() {
+            sudo env \
+              ZOMOROD_ROOT="$sandbox/zomorod" \
+              PASARGUARD_ROOT="$sandbox/pasarguard" \
+              SUB_TEMPLATE="$sandbox/templates/subscription/index.html" \
+              "$sandbox/zomorod/plugin/integrate-dashboard.sh"
+          }
 
+          run_integrator
           first_dashboard_sha="$(sha256sum "$sandbox/pasarguard/dashboard/build/index.html" | awk '{print $1}')"
           first_subscription_sha="$(sha256sum "$sandbox/templates/subscription/index.html" | awk '{print $1}')"
-
-          sudo env \
-            ZOMOROD_ROOT="$sandbox/zomorod" \
-            PASARGUARD_ROOT="$sandbox/pasarguard" \
-            SUB_TEMPLATE="$sandbox/templates/subscription/index.html" \
-            "$sandbox/zomorod/plugin/integrate-dashboard.sh"
-
+          run_integrator
           second_dashboard_sha="$(sha256sum "$sandbox/pasarguard/dashboard/build/index.html" | awk '{print $1}')"
           second_subscription_sha="$(sha256sum "$sandbox/templates/subscription/index.html" | awk '{print $1}')"
 
@@ -130,20 +139,26 @@ jobs:
           test "$(grep -c 'zomorod-runtime-inline' "$sandbox/templates/subscription/index.html")" -eq 1
           test "$(grep -c 'zomorod-admin-subscriptions-start' "$sandbox/pasarguard/app/routers/__init__.py")" -eq 1
           test "$(grep -c 'zomorod_admin_subscriptions.router' "$sandbox/pasarguard/app/routers/__init__.py")" -eq 1
+          ! grep -q 'zomorod-pasarguard-theme-guard' "$sandbox/pasarguard/dashboard/build/index.html"
           cmp plugin/zomorod-special.js "$sandbox/pasarguard/dashboard/build/statics/zomorod-special.js"
           cmp backend/zomorod_admin_subscriptions.py "$sandbox/pasarguard/app/routers/zomorod_admin_subscriptions.py"
 
-      - name: Validate installer help
-        run: bash install.sh --help >/dev/null
+      - name: Validate installer and CLI help
+        run: |
+          bash install.sh --help >/dev/null
+          bash cli/zomorod --help >/dev/null
 
       - name: Validate required artifacts
         run: |
+          set -euo pipefail
           test -s dist/index.html
           test -s plugin/zomorod-special.js
           test -s plugin/zomorod-runtime.js
+          test -s plugin/integrate-dashboard.sh
+          test -s plugin/zomorod-guard.sh
           test -s backend/zomorod_admin_subscriptions.py
+          test -s cli/zomorod
           test -s systemd/zomorod-integrator.service
-          test -s systemd/zomorod-integrator.path
           test -s systemd/zomorod-integrator.timer
 
       - name: Refresh installer prebuilt from validated build
