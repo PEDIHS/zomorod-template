@@ -2,98 +2,72 @@
 
 # 💎 زمرد — Zomorod Template
 
-### تجربه اشتراک حرفه‌ای برای PasarGuard با رابط Emerald + Gold و کنترل‌های `Zomorod · Special`
+### تم حرفه‌ای Subscription برای PasarGuard با کنترل‌های `Zomorod · Special`
 
 <p align="center">
   <img alt="Zomorod" src="https://img.shields.io/badge/Zomorod-Special-065f46?style=for-the-badge&labelColor=0b2f26">
   <img alt="PasarGuard" src="https://img.shields.io/badge/PasarGuard-Compatible-b8860b?style=for-the-badge&labelColor=3a2d09">
-  <img alt="Persian First" src="https://img.shields.io/badge/Language-فارسی-047857?style=for-the-badge">
   <img alt="CI" src="https://github.com/PEDIHS/zomorod-template/actions/workflows/ci.yml/badge.svg">
 </p>
 
-<p align="center">
-  <strong>ظاهر اصلی زمرد حفظ می‌شود؛ Integration فقط قابلیت اضافه می‌کند.</strong><br>
-  صفحه اشتراک، تنظیمات Special و تنظیمات Native پاسارگارد بدون دیتابیس مدیریتی دوم کنار هم کار می‌کنند.
-</p>
+## 🚀 نصب تک‌مرحله‌ای
 
-<p align="center">
-  <a href="README.en.md">English documentation</a> ·
-  <a href="docs/ARCHITECTURE.md">معماری افزونه</a>
-</p>
+روی سروری که PasarGuard از قبل نصب است همین یک دستور را اجرا کنید:
+
+```bash
+curl -fL --show-error -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' "https://raw.githubusercontent.com/PEDIHS/zomorod-template/main/install.sh?install=$(date +%s)" -o /tmp/zomorod-install.sh && sudo bash /tmp/zomorod-install.sh
+```
+
+این روش Installer را ابتدا کامل دانلود می‌کند، Cache را دور می‌زند و فقط در صورت دانلود موفق آن را اجرا می‌کند.
+
+اگر نمی‌خواهید در همان لحظه از Restart رسمی PasarGuard استفاده شود:
+
+```bash
+sudo bash /tmp/zomorod-install.sh --no-restart
+```
+
+> Installer هیچ `docker restart`، `docker compose down/up`، recreate یا reboot خامی اجرا نمی‌کند. اگر Restart لازم باشد فقط از CLI رسمی خود PasarGuard استفاده می‌شود.
+
+برای بروزرسانی بعدی:
+
+```bash
+sudo zomorod update
+```
+
+برای بررسی واقعی سلامت نصب:
+
+```bash
+zomorod doctor
+```
 
 ---
 
-## 📱 پیش‌نمایش واقعی — Light / Dark
+## زمرد چه چیزی اضافه می‌کند؟
 
-تصاویر زیر از اجرای واقعی تمپلیت زمرد گرفته شده‌اند و برای مستندات GitHub فقط Browser Chrome و آدرس پنل از آن‌ها حذف شده است.
+زمرد ظاهر اصلی Subscription را حفظ می‌کند و Integration خودش را به‌صورت جدا و self-healing اضافه می‌کند:
+
+- صفحه اشتراک Emerald + Gold
+- تب `Zomorod · Special` داخل Settings پاسارگارد
+- نام فروشگاه و پشتیبانی
+- نمایش/عدم نمایش کانفیگ‌های معمولی
+- نمایش WireGuard فقط وقتی واقعاً در Subscription وجود داشته باشد
+- نمایش Ping و Applications
+- Announcement ویژه با حالت Always / Scheduled
+- تنظیمات مستقل برای Owner و reseller
+- Namespace اختصاصی `/sub/<admin>/<subscription-hash>` برای نماینده‌ها
+- Theme مستقل Subscription با کلید `zomorod-theme`
+
+زمرد برای تنظیمات مدیریتی یک دیتابیس دوم ایجاد نمی‌کند و تا جای ممکن از مدل و API خود PasarGuard استفاده می‌کند.
+
+---
+
+## 📱 پیش‌نمایش
 
 <p align="center">
-  <img src="screenshots/light-usage-announcement.webp" alt="Light usage and announcement" width="44%">
+  <img src="screenshots/light-dashboard.webp" alt="Zomorod light dashboard" width="44%">
   &nbsp;&nbsp;
-  <img src="screenshots/dark-usage-announcement.webp" alt="Dark usage and announcement" width="44%">
+  <img src="screenshots/dark-dashboard.webp" alt="Zomorod dark dashboard" width="44%">
 </p>
-
-<p align="center"><sub>داشبورد اصلی در حالت روشن و تاریک</sub></p>
-
----
-
-## 🛡️ داشبورد اشتراک
-
-صفحه اصلی برای نمایش سریع وضعیت سرویس طراحی شده است؛ بدون شلوغی و با تمرکز روی اطلاعاتی که کاربر واقعاً نیاز دارد.
-
-- وضعیت فعال، محدود، منقضی و سایر وضعیت‌های PasarGuard
-- حجم کل، مصرف‌شده و باقی‌مانده
-- درصد مصرف و زمان باقی‌مانده
-- Quick Connect برای رفتن مستقیم به کانفیگ‌ها
-- Refresh اطلاعات
-- طراحی Responsive و Mobile-first
-- پشتیبانی مستقل از Light / Dark / System
-
-<p align="center">
-  <img src="screenshots/light-usage-announcement.webp" alt="Light usage and announcement" width="44%">
-  &nbsp;&nbsp;
-  <img src="screenshots/dark-usage-announcement.webp" alt="Dark usage and announcement" width="44%">
-</p>
-
----
-
-## 📊 مصرف، اطلاعات حساب و اعلان
-
-زمرد جزئیات مصرف و وضعیت حساب را در کارت‌های جدا و خوانا نمایش می‌دهد.
-
-- Remaining Traffic با نمایش بصری حجم باقی‌مانده
-- حجم مصرف‌شده و حجم کل
-- تاریخ انقضا و آخرین اتصال
-- نمودار مصرف در بازه‌های زمانی مختلف
-- اعلان Native پاسارگارد
-- حالت اعلان Special با Accent زمردی/طلایی و انیمیشن چشمگیر
-- امکان نمایش دائمی یا زمان‌بندی‌شده اعلان در چند ساعت مختلف روز
-
-<p align="center">
-  <img src="screenshots/light-usage-announcement.webp" alt="Light usage and announcement" width="44%">
-  &nbsp;&nbsp;
-  <img src="screenshots/dark-usage-announcement.webp" alt="Dark usage and announcement" width="44%">
-</p>
-
-### اعلان Special
-
-وقتی گزینه Announcement در Zomorod فعال باشد، اعلان فقط زمانی Special می‌شود که **واقعاً متن اعلان در PasarGuard وجود داشته باشد**. در حالت Scheduled نیز فقط داخل بازه‌های تعریف‌شده نمایش داده می‌شود.
-
-انیمیشن اعلان برای کاربرانی که `prefers-reduced-motion` دارند به‌صورت خودکار غیرفعال می‌شود.
-
----
-
-## 🔗 لینک اشتراک و کانفیگ‌ها
-
-بخش Connection Links همان ساختار اصلی تمپلیت را نگه می‌دارد و قابلیت‌های زمرد روی آن به‌صورت کنترل‌شده اعمال می‌شوند.
-
-- کارت مستقل Subscription Link
-- Copy و QR Code
-- Copy All
-- تشخیص پروتکل هر کانفیگ
-- Ping نمایشی برای هر سرور
-- نمایش نام و Flag سرورها
-- کنترل مستقل نمایش کانفیگ‌های معمولی
 
 <p align="center">
   <img src="screenshots/light-configs.webp" alt="Light configuration list" width="44%">
@@ -101,55 +75,13 @@
   <img src="screenshots/dark-configs.webp" alt="Dark configuration list" width="44%">
 </p>
 
-### WireGuard واقعی، نه کارت ساختگی
-
-WireGuard فقط در صورتی نمایش داده می‌شود که داخل Subscription کاربر واقعاً یک لینک `WireGuard / WG` وجود داشته باشد. در این حالت همان کانفیگ در کنار VLESS و سایر کانفیگ‌ها قرار می‌گیرد.
-
-Template اصلی برای WireGuard قابلیت دریافت محتوای Native و دانلود فایل `.conf` را دارد. اگر WG داخل Subscription وجود نداشته باشد، زمرد هیچ کارت یا کانفیگ مصنوعی ایجاد نمی‌کند.
-
 ---
 
-## 📲 اپلیکیشن‌های پیشنهادی
+## ⚙️ Zomorod · Special
 
-Applications از تنظیمات خود PasarGuard خوانده می‌شوند و در صفحه اشتراک نمایش داده می‌شوند. بنابراین برای اضافه یا حذف ابزارهای Android، iOS یا Desktop نیازی به ویرایش دستی HTML نیست.
+بعد از نصب، در Settings پاسارگارد یک Tab با نام `Zomorod` و Badge کوچک `Special` اضافه می‌شود. این صفحه Popup نیست و داخل همان ناحیه Settings رندر می‌شود.
 
-- Apps تعریف‌شده در PasarGuard
-- Import URLهای Native
-- نمایش متناسب با دستگاه
-- امکان روشن/خاموش کردن نمایش Apps از Zomorod
-
----
-
-## ⚙️ `Zomorod · Special`
-
-بعد از نصب، یک Tab انگلیسی با Badge کوچک `Special` در صفحه Settings پاسارگارد اضافه می‌شود. این بخش **Popup یا Overlay مستقل نیست** و داخل همان ناحیه Settings کار می‌کند.
-
-Master Toggle با نام Runtime وجود ندارد؛ هر قابلیت به‌صورت مستقل کنترل می‌شود.
-
-### تنظیمات Zomorod
-
-- نام فروشگاه
-- نمایش کانفیگ‌های معمولی
-- نمایش WireGuard
-- نمایش Ping
-- نمایش Applications
-- نمایش Announcement Special
-- حالت `Always / Scheduled` برای اعلان
-- چند ساعت نمایش در روز
-- مدت فعال بودن هر نوبت اعلان
-
-### تنظیمات مشترک Native PasarGuard
-
-- `Allow browser config`
-- فرمت Native `links`
-- فرمت Native `wireguard`
-- متن Announcement
-- Announcement URL
-- Applications
-
-این موارد در تنظیمات خود PasarGuard ذخیره می‌شوند؛ Zomorod برای آن‌ها دیتابیس دوم ایجاد نمی‌کند.
-
-### Defaultهای فعلی
+Defaultهای نصب جدید:
 
 | قابلیت | پیش‌فرض |
 |---|---|
@@ -159,73 +91,66 @@ Master Toggle با نام Runtime وجود ندارد؛ هر قابلیت به�
 | WireGuard | ⛔ خاموش |
 | Announcement Special | ⛔ خاموش |
 
-قابلیت‌های Special عمداً روی نصب جدید پیش‌فرض خاموش هستند تا مدیر پنل خودش تصمیم بگیرد چه چیزهایی برای کاربران نمایش داده شوند.
+برای Owner، تنظیمات Native پاسارگارد مثل `announcement`، `support_url`، `allow_browser_config` و فرمت‌های Native از همان `/api/settings` خوانده و ذخیره می‌شوند.
+
+برای reseller، تنظیمات شخصی در فیلدهای Native خود Admin و `custom_variables` ذخیره می‌شوند و روی کاربران همان reseller اعمال می‌شوند.
 
 ---
 
-## 🌗 تم مستقل از Dashboard پاسارگارد
+## 🔗 WireGuard واقعی
 
-Zomorod دیگر Local Storage مربوط به Theme پنل PasarGuard را لمس نمی‌کند.
-
-- Dashboard پاسارگارد کلید Theme خودش را نگه می‌دارد.
-- Subscription Template از کلید مستقل `zomorod-theme` استفاده می‌کند.
-- تغییر Light/Dark در صفحه اشتراک نباید Theme پنل مدیریت را Reset کند.
-- Tab تنظیمات Zomorod فقط از Theme فعلی Dashboard تبعیت می‌کند و آن را تغییر نمی‌دهد.
-
-این جداسازی هم در Build جدید Template و هم در Installer برای Prebuilt فارسی اعمال شده است.
+زمرد هیچ WireGuard ساختگی ایجاد نمی‌کند. اگر Subscription کاربر واقعاً ردیف `WG / WireGuard` داشته باشد می‌تواند نمایش داده شود؛ در غیر این صورت هیچ کارت مصنوعی ساخته نمی‌شود.
 
 ---
 
-## 🚀 نصب
+## 🌗 جداسازی Theme
 
-دستور استاندارد نصب روی یک سرور دارای PasarGuard:
-
-```bash
-curl -fL --show-error -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' "https://raw.githubusercontent.com/PEDIHS/zomorod-template/main/install.sh?install=$(date +%s)" -o /tmp/zomorod-install.sh && sudo bash /tmp/zomorod-install.sh
-```
-
-این روش Installer را ابتدا در `/tmp` ذخیره می‌کند، نسخه کش‌شده را دور می‌زند و فقط در صورت دانلود موفق آن را اجرا می‌کند.
-
-Installer برای فارسی `latest` از Prebuilt اصلی زمرد استفاده می‌کند، فایل‌های Plugin و Backend را نصب می‌کند، دستور `zomorod` را در `/usr/local/bin/zomorod` قرار می‌دهد و Integration را اعمال می‌کند.
-
-### Restart امن PasarGuard
-
-در حالت پیش‌فرض، بعد از نصب Integration، فقط خود پنل PasarGuard از طریق CLI رسمی آن Restart می‌شود:
+Subscription از کلید مستقل زیر استفاده می‌کند:
 
 ```text
-pasarguard restart
+zomorod-theme
 ```
 
-Installer مستقیماً `docker restart`، `docker compose down/up`، recreate یا reboot سیستم اجرا نمی‌کند. بعد از Restart، وضعیت PasarGuard بررسی و Integration زمرد دوباره اعمال می‌شود تا Routeهای Backend مانند `/sub/<admin>/<subscription-hash>` فعال شوند.
-
-اگر عمداً نمی‌خواهید پنل در همان لحظه Restart شود:
-
-```bash
-sudo bash /tmp/zomorod-install.sh --no-restart
-```
-
-در این حالت Routeهای Python بعد از Restart عادی بعدی PasarGuard فعال می‌شوند.
+Dashboard پاسارگارد Theme خودش را نگه می‌دارد. Integrator جدید Hook قدیمی Theme روی Dashboard را هم پاک می‌کند و دیگر `localStorage` پنل مدیریت را Override نمی‌کند.
 
 ---
 
-## ♻️ بروزرسانی
+## 🧩 Persistence و Self-Healing
 
-بعد از اولین نصب، روش رسمی بروزرسانی این است:
+PasarGuard در حال حاضر Plugin API رسمی برای Tabهای شخص ثالث ندارد؛ بنابراین Zomorod یک Integration محدود و idempotent دارد.
+
+نسخه جدید Guard:
+
+- کانتینر فعال `pasarguard/panel` را مستقیم پیدا می‌کند
+- به نام Compose project وابسته نیست
+- در صورت تغییر کانتینر فوراً reconcile می‌کند
+- Health reconciliation دوره‌ای دارد و هر چند ثانیه کل Integration را بی‌دلیل دوباره اجرا نمی‌کند
+- از HS-PG مستقل است و هیچ `/opt/hs-pg` را اجرا نمی‌کند
+- Dashboard loader را بعد از تزریق با SHA بررسی می‌کند
+- Subscription template را بعد از hot-copy بررسی می‌کند
+- در صورت نبودن کانتینر Fail-safe می‌ماند و بعداً دوباره تلاش می‌کند
+
+---
+
+## 🩺 Doctor
 
 ```bash
-sudo zomorod update
+zomorod doctor
 ```
 
-Updater ابتدا SHA دقیق آخرین Commit شاخه `main` را Resolve می‌کند و سپس همان Snapshot ثابت را نصب می‌کند تا فایل‌های چند نسخه با هم مخلوط نشوند.
+موارد زیر را بررسی می‌کند:
 
-برای بررسی نسخه و وضعیت نصب:
-
-```bash
-zomorod version
-zomorod status
+```text
+Plugin files
+Subscription runtime
+Container guard
+Dashboard injection
+Subscription injection
+Backend route
+Installed ref
 ```
 
-اگر CLI هنوز روی یک نصب قدیمی وجود ندارد، یک بار Installer بخش «نصب» را اجرا کنید تا `/usr/local/bin/zomorod` ساخته شود.
+`Backend route: active (401)` بدون Token معتبر طبیعی است و یعنی Route داخل پروسه PasarGuard وجود دارد و احراز هویت کار می‌کند.
 
 ---
 
@@ -236,39 +161,46 @@ zomorod status
 /opt/zomorod/plugin/zomorod-special.js
 /opt/zomorod/plugin/zomorod-runtime.js
 /opt/zomorod/plugin/integrate-dashboard.sh
+/opt/zomorod/plugin/zomorod-guard.sh
 /opt/zomorod/backend/zomorod_admin_subscriptions.py
 /usr/local/bin/zomorod
 /var/lib/pasarguard/templates/subscription/index.html
 /var/lib/pasarguard/zomorod/admin-subscriptions.json
 ```
 
----
-
-## 🧩 پایداری Integration
-
-PasarGuard در حال حاضر Plugin API رسمی برای ثبت Tab شخص ثالث در Dashboard ندارد؛ بنابراین Zomorod از Integration محدود و self-healing استفاده می‌کند.
-
-- Loader فقط در Settings Tab Bar فعالیت می‌کند.
-- از تغییر Header و Skin عمومی Dashboard اجتناب می‌شود.
-- MutationObserver به‌صورت idempotent و با `requestAnimationFrame` کنترل می‌شود.
-- درخواست Settings دارای timeout است تا صفحه روی Loading بی‌نهایت نماند.
-- Path/Timer بعد از Update پنل Integration را دوباره بررسی می‌کنند.
-- Restart موردنیاز Backend فقط از CLI رسمی `pasarguard restart` انجام می‌شود؛ هیچ Lifecycle مستقیم Docker اجرا نمی‌شود.
+Backupهای Zomorod در `/opt/zomorod/backups` با دسترسی محدود ساخته می‌شوند؛ فایل‌های حساس مثل `.env` با permission خصوصی نگهداری می‌شوند.
 
 ---
 
-## 🔐 امنیت و Fail-safe
+## ♻️ بروزرسانی
 
-- Management Backend جدا وجود ندارد.
-- درخواست تنظیمات same-origin به `/api/settings` انجام می‌شود.
-- نام UTF-8 فروشگاه به‌صورت Base64 در Header اختصاصی Zomorod ذخیره می‌شود تا محدودیت Headerهای HTTP رعایت شود.
-- اگر Runtime نتواند تنظیمات Subscription را دریافت کند، تغییرات Special اعمال نمی‌شوند و UI اصلی Template در اولویت می‌ماند.
-- WireGuard جعلی تولید نمی‌شود؛ فقط لینک واقعی Subscription نمایش داده می‌شود.
+```bash
+sudo zomorod update
+```
+
+Updater ابتدا SHA دقیق آخرین Commit شاخه `main` را Resolve می‌کند و سپس Installer و تمام فایل‌ها را از همان Snapshot ثابت دریافت می‌کند تا فایل‌های چند نسخه با هم مخلوط نشوند.
+
+```bash
+zomorod version
+zomorod status
+zomorod doctor
+```
 
 ---
 
-## سازگاری
+## 🗑️ حذف
 
-Zomorod برای ساختار فعلی PasarGuard طراحی و تست می‌شود. چون Dashboard هنوز API رسمی Third-party Plugin ندارد، تغییرات عمده آینده در DOM یا Router پاسارگارد ممکن است نیاز به بروزرسانی Integration داشته باشند.
+```bash
+curl -fsSL https://raw.githubusercontent.com/PEDIHS/zomorod-template/main/uninstall.sh | sudo bash
+```
+
+Uninstaller فایل‌ها، CLI و Guardهای Zomorod را حذف می‌کند ولی اطلاعات کاربران و تنظیمات Native PasarGuard را عمداً نگه می‌دارد.
+
+---
+
+<p align="center">
+  <a href="README.en.md">English documentation</a> ·
+  <a href="docs/ARCHITECTURE.md">معماری افزونه</a>
+</p>
 
 </div>
