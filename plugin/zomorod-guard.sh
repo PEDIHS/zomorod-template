@@ -39,17 +39,22 @@ panel_rows() {
 }
 
 reconcile() {
-  local rows="$1" cid project image count=0
+  local rows="$1" cid project image
   if [[ -n "${rows}" ]]; then
     while IFS='|' read -r cid project image; do
       [[ -n "${cid}" ]] || continue
-      count=$((count + 1))
       log "reconciling ${cid:0:12} compose-project=${project}"
-      PASARGUARD_CONTAINER_ID="${cid}" PASARGUARD_COMPOSE_PROJECT="${project}" "${INTEGRATOR}"
+      if ! PASARGUARD_CONTAINER_ID="${cid}" PASARGUARD_COMPOSE_PROJECT="${project}" "${INTEGRATOR}"; then
+        warn "integration failed for ${cid:0:12}"
+        return 1
+      fi
     done <<<"${rows}"
   else
     log 'no running pasarguard/panel container detected; checking host integration'
-    "${INTEGRATOR}"
+    if ! "${INTEGRATOR}"; then
+      warn 'host integration is not ready yet'
+      return 1
+    fi
   fi
   return 0
 }
