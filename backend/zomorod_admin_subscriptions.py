@@ -294,7 +294,7 @@ def _profile_variables(model: AdminProfileUpdate, normalized_support_id: str) ->
         VAR_SHOW_CONFIGS: "true" if model.show_configs else "false",
         VAR_SHOW_WIREGUARD: "true" if model.show_wireguard else "false",
         VAR_SHOW_PING: "true" if model.show_ping else "false",
-        VAR_SHOW_APS: "true" if model.show_apps else "false",
+        VAR_SHOW_APPS: "true" if model.show_apps else "false",
         VAR_SHOW_ANNOUNCEMENT: "true" if model.show_announcement else "false",
         VAR_ANNOUNCEMENT_MODE: model.announcement_mode,
         VAR_ANNOUNCEMENT_TIMES: _validate_announcement_times(model.announcement_times),
