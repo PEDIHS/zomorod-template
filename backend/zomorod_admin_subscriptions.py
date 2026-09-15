@@ -8,9 +8,9 @@ Two responsibilities live here:
 
 The native PasarGuard user token stays the only subscription secret.  Namespace
 requests always verify that the token belongs to the mapped admin.  Per-admin
-branding uses PasarGuard's own Admin.profile_title, Admin.support_url and
-Admin.custom_variables fields, so reseller preferences live in PasarGuard's
-native database rather than in a second Zomorod database.
+branding is isolated in namespaced ZOMOROD_* custom variables. Reseller changes
+never write PasarGuard's native Admin.profile_title or
+Admin.support_url fields, so they cannot leak into ordinary /sub/<token> links.
 """
 
 from __future__ import annotations
@@ -66,6 +66,7 @@ LOCK_FILE = DATA_DIR / ".admin-subscriptions.lock"
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 RESERVED_SLUGS = {"api", "info", "raw", "apps", "usage", "admin", "zomorod"}
 
+VAR_STORE_NAME = "ZOMOROD_STORE_NAME"
 VAR_SUPPORT_ID = "ZOMOROD_SUPPORT_ID"
 VAR_SHOW_CONFIGS = "ZOMOROD_SHOW_CONFIGS"
 VAR_SHOW_WIREGUARD = "ZOMOROD_SHOW_WIREGUARD"
@@ -76,6 +77,7 @@ VAR_ANNOUNCEMENT_MODE = "ZOMOROD_ANNOUNCEMENT_MODE"
 VAR_ANNOUNCEMENT_TIMES = "ZOMOROD_ANNOUNCEMENT_TIMES"
 VAR_ANNOUNCEMENT_DURATION = "ZOMOROD_ANNOUNCEMENT_DURATION"
 ZOMOROD_VARIABLE_KEYS = {
+    VAR_STORE_NAME,
     VAR_SUPPORT_ID,
     VAR_SHOW_CONFIGS,
     VAR_SHOW_WIREGUARD,
@@ -227,6 +229,10 @@ def _display_support_id(admin: Admin, variables: dict[str, str]) -> str:
     stored = variables.get(VAR_SUPPORT_ID, "").strip()
     if stored:
         return stored
+
+    # Legacy read-only fallback for profiles saved by Zomorod <= 4.5.0.
+    # A subsequent PUT migrates the value into ZOMOROD_* variables and clears
+    # native PasarGuard branding fields.
     support_url = str(admin.support_url or "").strip()
     if not support_url:
         return ""
@@ -241,6 +247,18 @@ def _display_support_id(admin: Admin, variables: dict[str, str]) -> str:
     return support_url
 
 
+def _support_url_from_id(value: str) -> str:
+    raw = value.strip()
+    if not raw:
+        return ""
+    username = raw[1:] if raw.startswith("@") else raw
+    if re.fullmatch(r"[A-Za-z0-9_]{4,64}", username):
+        return f"https://t.me/{username}"
+    if raw.startswith(("https://", "http://", "tg://")):
+        return raw
+    return ""
+
+
 def _profile_from_admin(admin: Admin) -> dict:
     variables = _custom_variable_map(admin)
     try:
@@ -249,10 +267,15 @@ def _profile_from_admin(admin: Admin) -> dict:
         duration = PROFILE_DEFAULTS["announcement_duration"]
     duration = max(1, min(1440, duration))
     mode = variables.get(VAR_ANNOUNCEMENT_MODE, "always")
+    support_id = _display_support_id(admin, variables)
+    store_name = variables.get(VAR_STORE_NAME, "").strip()
+    if not store_name:
+        # Legacy read-only fallback; PUT migrates it to ZOMOROD_STORE_NAME.
+        store_name = str(admin.profile_title or admin.username or "زمرد")
     return {
-        "store_name": str(admin.profile_title or admin.username or "زمرد"),
-        "support_id": _display_support_id(admin, variables),
-        "support_url": str(admin.support_url or ""),
+        "store_name": store_name,
+        "support_id": support_id,
+        "support_url": _support_url_from_id(support_id),
         "show_configs": _as_bool(variables.get(VAR_SHOW_CONFIGS), PROFILE_DEFAULTS["show_configs"]),
         "show_wireguard": _as_bool(variables.get(VAR_SHOW_WIREGUARD), PROFILE_DEFAULTS["show_wireguard"]),
         "show_ping": _as_bool(variables.get(VAR_SHOW_PING), PROFILE_DEFAULTS["show_ping"]),
@@ -266,11 +289,12 @@ def _profile_from_admin(admin: Admin) -> dict:
 
 def _profile_variables(model: AdminProfileUpdate, normalized_support_id: str) -> dict[str, str]:
     return {
+        VAR_STORE_NAME: model.store_name.strip(),
         VAR_SUPPORT_ID: normalized_support_id,
         VAR_SHOW_CONFIGS: "true" if model.show_configs else "false",
         VAR_SHOW_WIREGUARD: "true" if model.show_wireguard else "false",
         VAR_SHOW_PING: "true" if model.show_ping else "false",
-        VAR_SHOW_APPS: "true" if model.show_apps else "false",
+        VAR_SHOW_APS: "true" if model.show_apps else "false",
         VAR_SHOW_ANNOUNCEMENT: "true" if model.show_announcement else "false",
         VAR_ANNOUNCEMENT_MODE: model.announcement_mode,
         VAR_ANNOUNCEMENT_TIMES: _validate_announcement_times(model.announcement_times),
@@ -313,17 +337,19 @@ def _profile_headers(admin: Admin) -> dict[str, str]:
 
 def _overlay_headers(headers: dict, admin: Admin) -> dict:
     result = dict(headers or {})
+    profile = _profile_from_admin(admin)
     result.update(_profile_headers(admin))
-    if admin.support_url:
-        result["support-url"] = str(admin.support_url)
+    if profile["support_url"]:
+        result["support-url"] = profile["support_url"]
     return result
 
 
 def _overlay_response(response: Response, admin: Admin) -> Response:
+    profile = _profile_from_admin(admin)
     for key, value in _profile_headers(admin).items():
         response.headers[key] = value
-    if admin.support_url:
-        response.headers["support-url"] = str(admin.support_url)
+    if profile["support_url"]:
+        response.headers["support-url"] = profile["support_url"]
     return response
 
 
@@ -379,7 +405,7 @@ async def update_my_zomorod_profile(
     current_admin: AdminDetails = Depends(_require_admin),
 ):
     db_admin = await _get_db_admin(db, int(current_admin.id))
-    normalized_support_id, support_url = _normalize_support_id(model.support_id)
+    normalized_support_id, _ = _normalize_support_id(model.support_id)
     variables = _profile_variables(model, normalized_support_id)
 
     preserved: list[dict] = []
@@ -394,8 +420,11 @@ async def update_my_zomorod_profile(
             preserved.append({"key": key, "value": value})
 
     preserved.extend({"key": key, "value": value} for key, value in variables.items())
-    db_admin.profile_title = model.store_name.strip()
-    db_admin.support_url = support_url
+    # Zomorod reseller branding must remain namespace-only.  Do not write
+    # PasarGuard native profile_title/support_url because native /sub/<token>
+    # responses consume those fields outside Zomorod namespaces.
+    db_admin.profile_title = None
+    db_admin.support_url = None
     db_admin.custom_variables = preserved
     await db.commit()
     await db.refresh(db_admin)
