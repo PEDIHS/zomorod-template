@@ -55,9 +55,34 @@ jobs:
           grep -q 'db_user.*admin_id' backend/zomorod_admin_subscriptions.py
           grep -q 'role.is_owner' backend/zomorod_admin_subscriptions.py
           grep -q '/api/zomorod/profile' backend/zomorod_admin_subscriptions.py
-          grep -q 'profile_title' backend/zomorod_admin_subscriptions.py
-          grep -q 'support_url' backend/zomorod_admin_subscriptions.py
+          grep -q 'ZOMOROD_STORE_NAME' backend/zomorod_admin_subscriptions.py
+          grep -q 'ZOMOROD_SUPPORT_ID' backend/zomorod_admin_subscriptions.py
+          grep -q 'db_admin.profile_title = None' backend/zomorod_admin_subscriptions.py
+          grep -q 'db_admin.support_url = None' backend/zomorod_admin_subscriptions.py
           grep -q 'ZOMOROD_SHOW_CONFIGS' backend/zomorod_admin_subscriptions.py
+          if grep -Eq 'db_admin\.profile_title[[:space:]]*=[[:space:]]*model|db_admin\.support_url[[:space:]]*=[[:space:]]*support' backend/zomorod_admin_subscriptions.py; then
+            echo 'Reseller Zomorod profile must not mutate native PasarGuard branding fields.' >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          import ast
+          from pathlib import Path
+          path = Path('backend/zomorod_admin_subscriptions.py')
+          tree = ast.parse(path.read_text())
+          assigned = set()
+          used = set()
+          for node in ast.walk(tree):
+              if isinstance(node, (ast.Assign, ast.AnnAssign)):
+                  targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                  for target in targets:
+                      if isinstance(target, ast.Name) and target.id.startswith('VAR_'):
+                          assigned.add(target.id)
+              if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id.startswith('VAR_'):
+                  used.add(node.id)
+          missing = sorted(used - assigned)
+          if missing:
+              raise SystemExit(f'Undefined Zomorod variable constants: {missing}')
+          PY
 
       - name: Validate shell scripts
         run: |
@@ -164,7 +189,7 @@ jobs:
           fi
 
           git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config user.email '4189823+github-actions[bot]@users.noreply.github.com'
           git add prebuilt
           git commit -m 'build: refresh installer prebuilt from validated template [skip ci]'
           git push origin HEAD:main
