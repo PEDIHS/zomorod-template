@@ -1,0 +1,51 @@
+name: Fix masked Zomorod guard install
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch installer
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('install.sh')
+          s = p.read_text(encoding='utf-8')
+          needle = '    install -m 0644 "${TMP_DIR}/${unit}" "/etc/systemd/system/${unit}"'
+          replacement = '\n'.join([
+              '    local target="/etc/systemd/system/${unit}"',
+              '    target="/etc/systemd/system/${unit}"',
+              '    if [[ -L "${target}" && "$(readlink "${target}" 2>/dev/null || true)" == "/dev/null" ]]; then',
+              '      warn "unmasking stale Zomorod unit ${unit}"',
+              '      rm -f "${target}"',
+              '    fi',
+              '    install -m 0644 "${TMP_DIR}/${unit}" "${target}"',
+          ])
+          if needle not in s:
+              raise SystemExit('installer unit target line not found')
+          p.write_text(s.replace(needle, replacement, 1), encoding='utf-8')
+          PY
+          bash -n install.sh
+          grep -q 'unmasking stale Zomorod unit' install.sh
+
+      - name: Commit installer fix
+        run: |
+          if git diff --quiet -- install.sh; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add install.sh
+          git commit -m 'fix: recover masked Zomorod systemd guards [skip masked-fix]'
+          git push origin HEAD:main
