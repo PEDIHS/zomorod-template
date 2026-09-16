@@ -1,0 +1,187 @@
+name: Apply reseller scope fix
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch Zomorod backend
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('backend/zomorod_admin_subscriptions.py')
+          s = p.read_text(encoding='utf-8')
+
+          s = s.replace(
+              'branding is isolated in namespaced ZOMOROD_* custom variables. Reseller changes\n',
+              'branding is isolated in per-admin ZOMOROD_* custom variables. Reseller changes\n',
+          )
+
+          if 'from app.subscription.share import encode_title\n' not in s:
+              s = s.replace(
+                  'from app.operation.subscription import SubscriptionOperation\n',
+                  'from app.operation.subscription import SubscriptionOperation\nfrom app.subscription.share import encode_title\n',
+                  1,
+              )
+
+          old_overlay = '''def _overlay_headers(headers: dict, admin: Admin) -> dict:\n    result = dict(headers or {})\n    profile = _profile_from_admin(admin)\n    result.update(_profile_headers(admin))\n    if profile["support_url"]:\n        result["support-url"] = profile["support_url"]\n    return result\n\n\ndef _overlay_response(response: Response, admin: Admin) -> Response:\n    profile = _profile_from_admin(admin)\n    for key, value in _profile_headers(admin).items():\n        response.headers[key] = value\n    if profile["support_url"]:\n        response.headers["support-url"] = profile["support_url"]\n    return response\n'''
+          new_overlay = '''def _has_profile_overrides(admin: Admin) -> bool:\n    variables = _custom_variable_map(admin)\n    return any(key in variables for key in ZOMOROD_VARIABLE_KEYS)\n\n\ndef _overlay_headers(headers: dict, admin: Admin) -> dict:\n    result = dict(headers or {})\n    if not _has_profile_overrides(admin):\n        return result\n    profile = _profile_from_admin(admin)\n    result.update(_profile_headers(admin))\n    result["profile-title"] = encode_title(profile["store_name"])\n    if profile["support_url"]:\n        result["support-url"] = profile["support_url"]\n    return result\n\n\ndef _overlay_response(response: Response, admin: Admin) -> Response:\n    if not _has_profile_overrides(admin):\n        return response\n    profile = _profile_from_admin(admin)\n    for key, value in _profile_headers(admin).items():\n        response.headers[key] = value\n    response.headers["profile-title"] = encode_title(profile["store_name"])\n    if profile["support_url"]:\n        response.headers["support-url"] = profile["support_url"]\n    return response\n'''
+          if 'def _has_profile_overrides(' not in s:
+              if old_overlay not in s:
+                  raise SystemExit('expected overlay block not found')
+              s = s.replace(old_overlay, new_overlay, 1)
+
+          s = s.replace(
+              '    # Zomorod reseller branding must remain namespace-only.  Do not write\n    # PasarGuard native profile_title/support_url because native /sub/<token>\n    # responses consume those fields outside Zomorod namespaces.\n',
+              '    # Zomorod branding is per-admin. Do not write PasarGuard native\n    # profile_title/support_url: the scoped Zomorod routes overlay those values\n    # only for users that belong to this admin.\n',
+          )
+
+          standard_routes = r'''
+
+# Standard PasarGuard subscription links are also scoped by the user owner.
+# Zomorod is registered before the native subscription router, so these routes
+# preserve native behavior and only overlay Zomorod values when the user's
+# admin has explicit ZOMOROD_* profile values.
+async def _admin_for_token(db: AsyncSession, token: str) -> Admin:
+    db_user = await subscription_operator.get_validated_sub(db, token, load_admin_role=True)
+    db_admin = getattr(db_user, "admin", None)
+    if db_admin is None:
+        db_admin = await _get_db_admin(db, int(getattr(db_user, "admin_id", 0) or 0))
+    return db_admin
+
+
+@router.get(f"{SUB_PREFIX}/{{token}}/", include_in_schema=False)
+@router.get(f"{SUB_PREFIX}/{{token}}", include_in_schema=False)
+async def scoped_standard_subscription(
+    request: Request,
+    token: str,
+    db: AsyncSession = Depends(get_db),
+    user_agent: str = Header(default=""),
+    headers=Depends(get_subscription_headers),
+):
+    db_admin = await _admin_for_token(db, token)
+    response = await subscription_operator.user_subscription(
+        db,
+        token=token,
+        accept_header=request.headers.get("Accept", ""),
+        user_agent=user_agent,
+        ip=request.client.host if request.client else None,
+        request_url=str(request.url),
+        **headers.model_dump(),
+    )
+    return _overlay_response(response, db_admin)
+
+
+@router.head(f"{SUB_PREFIX}/{{token}}/", include_in_schema=False)
+@router.head(f"{SUB_PREFIX}/{{token}}", include_in_schema=False)
+async def scoped_standard_subscription_headers(
+    request: Request,
+    token: str,
+    db: AsyncSession = Depends(get_db),
+    user_agent: str = Header(default=""),
+):
+    db_admin = await _admin_for_token(db, token)
+    response_headers = await subscription_operator.user_subscription_headers(
+        db,
+        token=token,
+        accept_header=request.headers.get("Accept", ""),
+        user_agent=user_agent,
+        request_url=str(request.url),
+    )
+    return Response(headers=_overlay_headers(response_headers, db_admin))
+
+
+@router.get(f"{SUB_PREFIX}/{{token}}/info", include_in_schema=False)
+async def scoped_standard_subscription_info(
+    request: Request, token: str, db: AsyncSession = Depends(get_db)
+):
+    db_admin = await _admin_for_token(db, token)
+    user_data, response_headers = await subscription_operator.user_subscription_info(
+        db, token=token, ip=request.client.host if request.client else None
+    )
+    return JSONResponse(
+        content=user_data.model_dump(mode="json"),
+        headers=_overlay_headers(response_headers, db_admin),
+    )
+
+
+@router.get(f"{SUB_PREFIX}/{{token}}/raw", include_in_schema=False)
+async def scoped_standard_subscription_raw(
+    request: Request, token: str, db: AsyncSession = Depends(get_db)
+):
+    db_admin = await _admin_for_token(db, token)
+    payload = await subscription_operator.user_subscription_raw(
+        db, token=token, request_url=str(request.url)
+    )
+    if isinstance(payload, dict):
+        payload["headers"] = _overlay_headers(payload.get("headers", {}), db_admin)
+    return payload
+
+
+@router.get(f"{SUB_PREFIX}/{{token}}/apps", response_model=list[Application], include_in_schema=False)
+async def scoped_standard_subscription_apps(token: str, db: AsyncSession = Depends(get_db)):
+    return await subscription_operator.user_subscription_apps(db, token)
+
+
+@router.get(f"{SUB_PREFIX}/{{token}}/usage", response_model=UserUsageStatsList, include_in_schema=False)
+async def scoped_standard_subscription_usage(
+    token: str,
+    query=Depends(get_subscription_usage_query),
+    db: AsyncSession = Depends(get_db),
+):
+    return await subscription_operator.get_user_usage(db, token=token, query=query)
+
+
+@router.get(f"{SUB_PREFIX}/{{token}}/{{client_type}}", include_in_schema=False)
+async def scoped_standard_subscription_client(
+    request: Request,
+    token: str,
+    client_type: ConfigFormat,
+    db: AsyncSession = Depends(get_db),
+    headers=Depends(get_subscription_headers),
+):
+    db_admin = await _admin_for_token(db, token)
+    response = await subscription_operator.user_subscription_with_client_type(
+        db,
+        token=token,
+        client_type=client_type,
+        request_url=str(request.url),
+        **headers.model_dump(),
+    )
+    return _overlay_response(response, db_admin)
+'''
+
+          if 'async def scoped_standard_subscription(' not in s:
+              s = s.rstrip() + standard_routes + '\n'
+
+          p.write_text(s, encoding='utf-8')
+          PY
+
+          python3 -m py_compile backend/zomorod_admin_subscriptions.py
+          grep -q 'async def scoped_standard_subscription(' backend/zomorod_admin_subscriptions.py
+          grep -q 'profile-title.*encode_title' backend/zomorod_admin_subscriptions.py
+          grep -q 'def _has_profile_overrides' backend/zomorod_admin_subscriptions.py
+
+      - name: Commit patch
+        run: |
+          if git diff --quiet -- backend/zomorod_admin_subscriptions.py; then
+            echo 'Scoped reseller fix is already present.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend/zomorod_admin_subscriptions.py
+          git commit -m 'fix: scope reseller branding to owned subscriptions [skip scope-fix]'
+          git push origin HEAD:main
