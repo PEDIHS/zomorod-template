@@ -24,22 +24,23 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from starlette.convertors import Convertor, register_url_convertor
 
 from app.db import AsyncSession, get_db
-from app.db.models import Admin
+from app.db.models import Admin, User
 from app.models.admin import AdminDetails
 from app.models.settings import Application, ConfigFormat
 from app.models.stats import UserUsageStatsList
 from app.models.user import SubscriptionUserResponse
 from app.operation import OperatorType
 from app.operation.subscription import SubscriptionOperation
+from app.operation.user import UserOperation
 from app.subscription.share import encode_title
 from app.routers.authentication import get_current
 from app.routers.dependencies import get_subscription_headers, get_subscription_usage_query
@@ -373,8 +374,15 @@ async def _get_db_admin(db: AsyncSession, admin_id: int) -> Admin:
 
 
 async def _admin_rows(db: AsyncSession) -> list[dict]:
-    rows = (await db.execute(select(Admin.id, Admin.username).order_by(Admin.username.asc()))).all()
-    return [{"id": int(admin_id), "username": username} for admin_id, username in rows]
+    rows = (
+        await db.execute(
+            select(Admin.id, Admin.username, func.count(User.id).label("user_count"))
+            .outerjoin(User, User.admin_id == Admin.id)
+            .group_by(Admin.id, Admin.username)
+            .order_by(Admin.username.asc())
+        )
+    ).all()
+    return [{"id": int(a), "username": u, "user_count": int(n or 0)} for a, u, n in rows]
 
 
 def _public_routes(state: dict) -> list[dict]:
@@ -751,3 +759,38 @@ async def scoped_standard_subscription_client(
     )
     return _overlay_response(response, db_admin)
 
+# Zomorod canonical subscription URL patch
+def _namespace_url_for_admin(url: str, admin_id: int) -> str:
+    namespace = _namespace_for_admin(admin_id)
+    if not namespace or not namespace.get("enabled", True): return url
+    parsed = urlsplit(url)
+    segments = parsed.path.split("/")
+    sub_segment = subscription_env_settings.path.strip("/")
+    indexes = [i for i, segment in enumerate(segments) if segment == sub_segment]
+    if not indexes: return url
+    sub_index = indexes[-1]
+    tail = [segment for segment in segments[sub_index + 1 :] if segment]
+    if len(tail) != 1: return url
+    segments.insert(sub_index + 1, str(namespace["slug"]))
+    return urlunsplit((parsed.scheme, parsed.netloc, "/".join(segments), parsed.query, parsed.fragment))
+
+
+def _install_subscription_url_namespace_patch() -> None:
+    native_attr = "_zomorod_native_generate_subscription_url"
+    native = getattr(UserOperation, native_attr, None)
+    if native is None:
+        native = UserOperation.generate_subscription_url
+        setattr(UserOperation, native_attr, native)
+    current = UserOperation.generate_subscription_url
+    if getattr(current, "_zomorod_namespace_patch", False): return
+    async def generate_subscription_url(user):
+        url = await native(user)
+        admin = getattr(user, "admin", None)
+        admin_id = int(getattr(admin, "id", 0) or 0)
+        if admin_id <= 0: return url
+        return _namespace_url_for_admin(url, admin_id)
+    generate_subscription_url._zomorod_namespace_patch = True
+    UserOperation.generate_subscription_url = staticmethod(generate_subscription_url)
+
+
+_install_subscription_url_namespace_patch()

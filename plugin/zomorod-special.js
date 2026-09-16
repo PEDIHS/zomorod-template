@@ -334,10 +334,12 @@
     if (!cachedNamespaces) return '';
     const admins = Array.isArray(cachedNamespaces.admins) ? cachedNamespaces.admins : [];
     const routes = Array.isArray(cachedNamespaces.routes) ? cachedNamespaces.routes : [];
-    const options = admins.map((admin) => `<option value="${escapeHtml(admin.id)}" data-username="${escapeHtml(admin.username)}">${escapeHtml(admin.username)}</option>`).join('');
+    const options = admins.map((admin) => `<option value="${escapeHtml(admin.id)}" data-username="${escapeHtml(admin.username)}" data-user-count="${escapeHtml(Number(admin.user_count || 0))}">${escapeHtml(admin.username)} · ${escapeHtml(Number(admin.user_count || 0))} users</option>`).join('');
     const rows = routes.length ? routes.map((route) => {
       const example = `${location.origin}${route.path_prefix}/<subscription-hash>`;
-      return `<div class="z-ns-row" data-z-route="${escapeHtml(route.slug)}"><div class="z-ns-admin">${escapeHtml(route.username)}</div><div class="z-ns-url" title="${escapeHtml(example)}">${escapeHtml(example)}</div><button type="button" class="z-mini-btn z-copy-ns" data-prefix="${escapeHtml(`${location.origin}${route.path_prefix}/`)}">Copy Prefix</button><button type="button" class="z-mini-btn z-danger z-delete-ns" data-slug="${escapeHtml(route.slug)}">Delete</button></div>`;
+      const admin = admins.find((item) => Number(item.id) === Number(route.admin_id));
+      const userCount = Number(admin?.user_count || 0);
+      return `<div class="z-ns-row" data-z-route="${escapeHtml(route.slug)}"><div class="z-ns-admin">${escapeHtml(route.username)} <span class="z-native">${escapeHtml(userCount)} users</span></div><div class="z-ns-url" title="${escapeHtml(example)}">${escapeHtml(example)}</div>${userCount === 0 ? '<div class="z-pending">این ادمین فعلاً هیچ User تحت مالکیت خود ندارد؛ ابتدا در PasarGuard برای Userها Set Owner انجام دهید.</div>' : ''}<button type="button" class="z-mini-btn z-copy-ns" data-prefix="${escapeHtml(`${location.origin}${route.path_prefix}/`)}">Copy Prefix</button><button type="button" class="z-mini-btn z-danger z-delete-ns" data-slug="${escapeHtml(route.slug)}">Delete</button></div>`;
     }).join('') : '<div class="z-help">هنوز برای هیچ ادمینی مسیر اختصاصی ساخته نشده است.</div>';
 
     return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.users}</span>Admin Subscription Namespaces</h3><div class="z-card-note">Owner مسیر هر نماینده را می‌سازد؛ تنظیمات شخصی همان نماینده فقط روی کاربران خودش اعمال می‌شود.</div></div><span class="z-native">OWNER ONLY</span></div>
@@ -381,10 +383,12 @@
       if (!(button instanceof HTMLButtonElement) || !(select instanceof HTMLSelectElement) || !(slug instanceof HTMLInputElement)) return;
       button.disabled = true;
       try {
+        const selectedAdmin = cachedNamespaces?.admins?.find((item) => Number(item.id) === Number(select.value));
         await api('/api/zomorod/admin-subscriptions', { method: 'POST', body: JSON.stringify({ admin_id: Number(select.value), slug: slug.value.trim(), enabled: true }) });
         cachedNamespaces = await api('/api/zomorod/admin-subscriptions');
         namespaceError = null;
         if (cachedSettings) renderOwner(cachedSettings);
+        if (Number(selectedAdmin?.user_count || 0) === 0) alert('Namespace ذخیره شد، اما این ادمین هیچ User تحت مالکیت خودش ندارد. ابتدا Userهای موردنظر را در PasarGuard با Set Owner به این ادمین منتقل کنید.');
       } catch (error) {
         alert(`Zomorod: ${error?.message || error}`);
       } finally {
