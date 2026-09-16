@@ -203,7 +203,13 @@ install_systemd_units() {
   local unit
   for unit in zomorod-integrator.service zomorod-integrator.path zomorod-integrator.timer; do
     download "$(raw_url "systemd/${unit}")" "${TMP_DIR}/${unit}" || fail "could not download systemd/${unit}"
-    install -m 0644 "${TMP_DIR}/${unit}" "/etc/systemd/system/${unit}"
+    local target="/etc/systemd/system/${unit}"
+    target="/etc/systemd/system/${unit}"
+    if [[ -L "${target}" && "$(readlink "${target}" 2>/dev/null || true)" == "/dev/null" ]]; then
+      warn "unmasking stale Zomorod unit ${unit}"
+      rm -f "${target}"
+    fi
+    install -m 0644 "${TMP_DIR}/${unit}" "${target}"
   done
   systemctl daemon-reload
   systemctl enable --now zomorod-integrator.path >/dev/null 2>&1 || warn "path watcher could not be enabled"
