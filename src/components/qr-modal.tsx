@@ -118,16 +118,16 @@ export const QRModal = memo(({ link, open, onOpenChange }: QRModalProps) => {
 
           {canGenerateQR ? (
             <div className="w-full rounded-[22px] border border-black/5 bg-white p-3 shadow-sm sm:p-4">
-              <div className="mx-auto aspect-square w-full max-w-[320px] overflow-hidden rounded-xl bg-white">
+              <div className="mx-auto w-full max-w-[240px] rounded-xl bg-white p-1">
                 <QRCodeSVG
                   value={qrValue}
-                  size={320}
+                  size={240}
                   level="L"
-                  marginSize={2}
+                  marginSize={4}
                   bgColor="#ffffff"
                   fgColor="#071c16"
-                  className="block h-auto w-full"
-                  style={{ width: '100%', height: 'auto', maxWidth: '320px' }}
+                  className="block h-auto w-full max-w-full"
+                  style={{ width: '100%', height: 'auto', maxWidth: '240px' }}
                   role="img"
                   aria-label={`${t('qr.title')} - ${link.name}`}
                 />
