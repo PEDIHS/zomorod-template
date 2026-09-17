@@ -112,6 +112,8 @@ class NamespaceUpsert(BaseModel):
 class AdminProfileUpdate(BaseModel):
     store_name: str = Field(min_length=1, max_length=80)
     support_id: str = Field(default="", max_length=256)
+    namespace_slug: str | None = Field(default=None, max_length=32)
+    namespace_enabled: bool = True
     show_configs: bool = PROFILE_DEFAULTS["show_configs"]
     show_wireguard: bool = PROFILE_DEFAULTS["show_wireguard"]
     show_ping: bool = PROFILE_DEFAULTS["show_ping"]
@@ -120,6 +122,13 @@ class AdminProfileUpdate(BaseModel):
     announcement_mode: Literal["always", "scheduled"] = "always"
     announcement_times: str = Field(default="", max_length=256)
     announcement_duration: int = Field(default=60, ge=1, le=1440)
+
+
+class AdminBrandingUpdate(BaseModel):
+    store_name: str = Field(min_length=1, max_length=80)
+    support_id: str = Field(default="", max_length=256)
+    namespace_slug: str | None = Field(default=None, max_length=32)
+    namespace_enabled: bool = True
 
 
 def _empty_state() -> dict:
@@ -317,6 +326,101 @@ def _namespace_for_admin(admin_id: int) -> dict | None:
     return None
 
 
+def _upsert_namespace_for_admin(admin: Admin, slug_value: str | None, enabled: bool = True) -> dict:
+    current = _namespace_for_admin(int(admin.id))
+    requested = slug_value if slug_value is not None else (current or {}).get("slug")
+    slug = _normalize_slug(requested, admin.username, int(admin.id))
+    with _write_lock():
+        state = _load_state()
+        routes = state.setdefault("routes", {})
+        existing = routes.get(slug)
+        if existing and int(existing.get("admin_id", 0) or 0) != int(admin.id):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Namespace already belongs to another admin")
+        created_at = None
+        for old_slug, item in list(routes.items()):
+            if int(item.get("admin_id", 0) or 0) == int(admin.id):
+                created_at = created_at or item.get("created_at")
+                if old_slug != slug:
+                    del routes[old_slug]
+        routes[slug] = {
+            "admin_id": int(admin.id),
+            "username": admin.username,
+            "enabled": bool(enabled),
+            "created_at": (existing or {}).get("created_at") or created_at or datetime.now(UTC).isoformat(),
+        }
+        _save_state(state)
+    namespace = _namespace_for_admin(int(admin.id))
+    if namespace is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Namespace could not be saved")
+    return namespace
+
+
+def _profile_payload(admin: Admin, *, is_owner: bool = False, user_count: int | None = None) -> dict:
+    payload = {
+        "admin_id": int(admin.id),
+        "username": admin.username,
+        "is_owner": bool(is_owner),
+        "namespace": _namespace_for_admin(int(admin.id)),
+        "has_overrides": _has_profile_overrides(admin),
+        "profile": _profile_from_admin(admin),
+    }
+    if user_count is not None:
+        payload["user_count"] = int(user_count)
+    return payload
+
+
+async def _save_full_profile(db: AsyncSession, admin: Admin, model: AdminProfileUpdate) -> None:
+    normalized_support_id, _ = _normalize_support_id(model.support_id)
+    variables = _profile_variables(model, normalized_support_id)
+    preserved: list[dict] = []
+    for item in admin.custom_variables or []:
+        if isinstance(item, dict):
+            key = str(item.get("key") or "")
+            value = str(item.get("value") or "")
+        else:
+            key = str(getattr(item, "key", "") or "")
+            value = str(getattr(item, "value", "") or "")
+        if key and key.upper() not in ZOMOROD_VARIABLE_KEYS:
+            preserved.append({"key": key, "value": value})
+    preserved.extend({"key": key, "value": value} for key, value in variables.items())
+    db_admin = admin
+    db_admin.profile_title = None
+    db_admin.support_url = None
+    db_admin.custom_variables = preserved
+    await db.commit()
+    await db.refresh(db_admin)
+
+
+async def _save_branding(db: AsyncSession, admin: Admin, model: AdminBrandingUpdate) -> None:
+    normalized_support_id, _ = _normalize_support_id(model.support_id)
+    variables = _custom_variable_map(admin)
+    variables[VAR_STORE_NAME] = model.store_name.strip()
+    variables[VAR_SUPPORT_ID] = normalized_support_id
+    preserved: list[dict] = []
+    for item in admin.custom_variables or []:
+        if isinstance(item, dict):
+            key = str(item.get("key") or "")
+            value = str(item.get("value") or "")
+        else:
+            key = str(getattr(item, "key", "") or "")
+            value = str(getattr(item, "value", "") or "")
+        upper = key.upper()
+        if upper in {VAR_STORE_NAME, VAR_SUPPORT_ID}:
+            continue
+        if key:
+            preserved.append({"key": key, "value": value})
+    preserved.extend([
+        {"key": VAR_STORE_NAME, "value": variables[VAR_STORE_NAME]},
+        {"key": VAR_SUPPORT_ID, "value": variables[VAR_SUPPORT_ID]},
+    ])
+    db_admin = admin
+    db_admin.profile_title = None
+    db_admin.support_url = None
+    db_admin.custom_variables = preserved
+    await db.commit()
+    await db.refresh(db_admin)
+
+
 def _encode_header(value: str) -> str:
     return base64.b64encode(value.encode("utf-8")).decode("ascii")
 
@@ -409,13 +513,7 @@ async def get_my_zomorod_profile(
     current_admin: AdminDetails = Depends(_require_admin),
 ):
     db_admin = await _get_db_admin(db, int(current_admin.id))
-    return {
-        "admin_id": int(db_admin.id),
-        "username": db_admin.username,
-        "is_owner": bool(current_admin.role and current_admin.role.is_owner),
-        "namespace": _namespace_for_admin(int(db_admin.id)),
-        "profile": _profile_from_admin(db_admin),
-    }
+    return _profile_payload(db_admin, is_owner=bool(current_admin.role and current_admin.role.is_owner))
 
 
 @router.put("/api/zomorod/profile")
@@ -425,37 +523,44 @@ async def update_my_zomorod_profile(
     current_admin: AdminDetails = Depends(_require_admin),
 ):
     db_admin = await _get_db_admin(db, int(current_admin.id))
-    normalized_support_id, _ = _normalize_support_id(model.support_id)
-    variables = _profile_variables(model, normalized_support_id)
+    await _save_full_profile(db, db_admin, model)
+    _upsert_namespace_for_admin(db_admin, model.namespace_slug, model.namespace_enabled)
+    return _profile_payload(db_admin, is_owner=bool(current_admin.role and current_admin.role.is_owner))
 
-    preserved: list[dict] = []
-    for item in db_admin.custom_variables or []:
-        if isinstance(item, dict):
-            key = str(item.get("key") or "")
-            value = str(item.get("value") or "")
-        else:
-            key = str(getattr(item, "key", "") or "")
-            value = str(getattr(item, "value", "") or "")
-        if key and key.upper() not in ZOMOROD_VARIABLE_KEYS:
-            preserved.append({"key": key, "value": value})
 
-    preserved.extend({"key": key, "value": value} for key, value in variables.items())
-    # Zomorod branding is per-admin. Do not write PasarGuard native
-    # profile_title/support_url: scoped routes overlay those values only
-    # for users that belong to this admin.
-    db_admin.profile_title = None
-    db_admin.support_url = None
-    db_admin.custom_variables = preserved
-    await db.commit()
-    await db.refresh(db_admin)
-
+@router.get("/api/zomorod/admin-profiles")
+async def list_admin_profiles(
+    db: AsyncSession = Depends(get_db),
+    _owner: AdminDetails = Depends(_require_owner),
+):
+    rows = (
+        await db.execute(
+            select(Admin, func.count(User.id).label("user_count"))
+            .outerjoin(User, User.admin_id == Admin.id)
+            .group_by(Admin.id)
+            .order_by(Admin.username.asc())
+        )
+    ).all()
     return {
-        "admin_id": int(db_admin.id),
-        "username": db_admin.username,
-        "is_owner": bool(current_admin.role and current_admin.role.is_owner),
-        "namespace": _namespace_for_admin(int(db_admin.id)),
-        "profile": _profile_from_admin(db_admin),
+        "admins": [
+            _profile_payload(admin, is_owner=int(admin.id) == int(_owner.id), user_count=int(user_count or 0))
+            for admin, user_count in rows
+        ]
     }
+
+
+@router.put("/api/zomorod/admin-profiles/{admin_id}")
+async def update_admin_profile_by_owner(
+    admin_id: int,
+    model: AdminBrandingUpdate,
+    db: AsyncSession = Depends(get_db),
+    _owner: AdminDetails = Depends(_require_owner),
+):
+    db_admin = await _get_db_admin(db, admin_id)
+    await _save_branding(db, db_admin, model)
+    _upsert_namespace_for_admin(db_admin, model.namespace_slug, model.namespace_enabled)
+    user_count = (await db.execute(select(func.count(User.id)).where(User.admin_id == db_admin.id))).scalar() or 0
+    return _profile_payload(db_admin, is_owner=int(db_admin.id) == int(_owner.id), user_count=int(user_count))
 
 
 @router.get("/api/zomorod/admin-subscriptions")
@@ -479,27 +584,15 @@ async def upsert_admin_namespace(
     _owner: AdminDetails = Depends(_require_owner),
 ):
     db_admin = await _get_db_admin(db, model.admin_id)
-    slug = _normalize_slug(model.slug, db_admin.username, db_admin.id)
-    with _write_lock():
-        state = _load_state()
-        routes = state.setdefault("routes", {})
-        existing = routes.get(slug)
-        if existing and int(existing.get("admin_id", 0)) != int(db_admin.id):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Namespace already belongs to another admin")
-
-        for old_slug, item in list(routes.items()):
-            if old_slug != slug and int(item.get("admin_id", 0)) == int(db_admin.id):
-                del routes[old_slug]
-
-        routes[slug] = {
-            "admin_id": int(db_admin.id),
-            "username": db_admin.username,
-            "enabled": bool(model.enabled),
-            "created_at": existing.get("created_at") if existing else datetime.now(UTC).isoformat(),
-        }
-        _save_state(state)
-
-    return next(item for item in _public_routes(state) if item["slug"] == slug)
+    namespace = _upsert_namespace_for_admin(db_admin, model.slug, model.enabled)
+    return {
+        "slug": namespace["slug"],
+        "admin_id": int(db_admin.id),
+        "username": db_admin.username,
+        "enabled": namespace["enabled"],
+        "path_prefix": namespace["path_prefix"],
+        "example": namespace["example"],
+    }
 
 
 @router.delete("/api/zomorod/admin-subscriptions/{slug}")
@@ -786,7 +879,7 @@ def _install_subscription_url_namespace_patch() -> None:
     async def generate_subscription_url(user):
         url = await native(user)
         admin = getattr(user, "admin", None)
-        admin_id = int(getattr(admin, "id", 0) or 0)
+        admin_id = int(getattr(user, "admin_id", 0) or getattr(admin, "id", 0) or 0)
         if admin_id <= 0: return url
         return _namespace_url_for_admin(url, admin_id)
     generate_subscription_url._zomorod_namespace_patch = True
