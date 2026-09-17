@@ -79,7 +79,8 @@ export const QRModal = memo(({ link, open, onOpenChange }: QRModalProps) => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="w-[calc(100vw-1rem)] max-w-[440px] max-h-[calc(100dvh-1rem)] overflow-y-auto overflow-x-hidden overscroll-contain rounded-[24px] p-4 sm:p-5"
+        className="min-w-0 max-h-[calc(100dvh-1rem)] overflow-y-auto overflow-x-hidden overscroll-contain rounded-[24px] p-4 sm:p-5"
+        style={{ width: 'min(440px, calc(100vw - 16px))', maxWidth: 'calc(100vw - 16px)' }}
         dir={dir}
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
@@ -92,7 +93,7 @@ export const QRModal = memo(({ link, open, onOpenChange }: QRModalProps) => {
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col items-center gap-3 py-1 sm:gap-4">
+        <div className="flex min-w-0 flex-col items-center gap-3 py-1 sm:gap-4">
           {wireGuardDownload && (
             <div className="ios-segmented-control" aria-label={t('qr.format')}>
               <Button
@@ -117,17 +118,20 @@ export const QRModal = memo(({ link, open, onOpenChange }: QRModalProps) => {
           )}
 
           {canGenerateQR ? (
-            <div className="w-full rounded-[22px] border border-black/5 bg-white p-3 shadow-sm sm:p-4">
-              <div className="mx-auto w-full max-w-[240px] rounded-xl bg-white p-1">
+            <div className="w-full min-w-0 rounded-[22px] border border-black/5 bg-white p-3 shadow-sm sm:p-4">
+              <div
+                className="mx-auto max-w-full rounded-xl bg-white p-1"
+                style={{ width: 'min(72vw, 256px)', maxWidth: '100%' }}
+              >
                 <QRCodeSVG
                   value={qrValue}
-                  size={240}
+                  size={256}
                   level="L"
-                  marginSize={4}
+                  marginSize={2}
                   bgColor="#ffffff"
                   fgColor="#071c16"
-                  className="block h-auto w-full max-w-full"
-                  style={{ width: '100%', height: 'auto', maxWidth: '240px' }}
+                  className="block max-w-full"
+                  style={{ display: 'block', width: '100%', height: 'auto', maxWidth: '100%' }}
                   role="img"
                   aria-label={`${t('qr.title')} - ${link.name}`}
                 />
