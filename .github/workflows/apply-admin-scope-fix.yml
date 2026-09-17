@@ -18,12 +18,35 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply tested patch
+      - name: Apply tested code patch
         run: |
           set -euo pipefail
           test -s tools/admin-scope-fix.patch
           git apply --check tools/admin-scope-fix.patch
           git apply tools/admin-scope-fix.patch
+          git checkout -- .github/workflows/ci.yml
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('backend/zomorod_admin_subscriptions.py')
+          text = path.read_text()
+          old = '''    admin.profile_title = None
+              admin.support_url = None
+              admin.custom_variables = preserved
+              await db.commit()
+              await db.refresh(admin)
+          '''
+          new = '''    db_admin = admin
+              db_admin.profile_title = None
+              db_admin.support_url = None
+              db_admin.custom_variables = preserved
+              await db.commit()
+              await db.refresh(db_admin)
+          '''
+          count = text.count(old)
+          if count != 2:
+              raise SystemExit(f'expected 2 branding save blocks, got {count}')
+          path.write_text(text.replace(old, new))
+          PY
           python3 -m py_compile backend/zomorod_admin_subscriptions.py
           node --check plugin/zomorod-special.js
           bash -n install.sh
@@ -31,15 +54,16 @@ jobs:
           grep -q '/api/zomorod/admin-profiles' plugin/zomorod-special.js
           grep -q 'namespace_slug' backend/zomorod_admin_subscriptions.py
           grep -q 'namespace_slug' plugin/zomorod-special.js
+          grep -q 'db_admin.profile_title = None' backend/zomorod_admin_subscriptions.py
+          grep -q 'db_admin.support_url = None' backend/zomorod_admin_subscriptions.py
           grep -q "const VERSION = '4.6.0'" plugin/zomorod-special.js
 
-      - name: Commit final code only
+      - name: Commit backend and plugin
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git rm tools/admin-scope-fix.patch .github/workflows/apply-admin-scope-fix.yml
-          git add .github/workflows/ci.yml backend/zomorod_admin_subscriptions.py plugin/zomorod-special.js
+          git add backend/zomorod_admin_subscriptions.py plugin/zomorod-special.js
           git diff --cached --check
           git commit -m 'fix: isolate admin branding and subscription paths'
           git push origin HEAD:main
