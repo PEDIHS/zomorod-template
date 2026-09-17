@@ -44,6 +44,32 @@ def _is_pasarguard_main() -> bool:
         return False
 
 
+def _make_pasarguard_importable() -> None:
+    """Add the panel working directory before importing app.*.
+
+    sitecustomize runs during Python site initialization, before Python inserts
+    the script directory into sys.path. PasarGuard starts with working directory
+    /code and then executes `python main.py`, so explicitly add cwd (plus known
+    image layouts) when they contain both main.py and app/.
+    """
+    candidates = [Path.cwd(), Path("/code"), Path("/app"), Path("/opt/pasarguard")]
+    seen: set[str] = set()
+    for candidate in candidates:
+        try:
+            resolved = str(candidate.resolve())
+        except Exception:
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        path = Path(resolved)
+        if (path / "main.py").is_file() and (path / "app").is_dir():
+            if resolved not in sys.path:
+                sys.path.insert(0, resolved)
+            return
+    raise RuntimeError("PasarGuard application directory was not found before main.py startup")
+
+
 def _has_profile_route(routes) -> bool:
     return any(getattr(route, "path", None) == PROFILE_ROUTE for route in routes)
 
@@ -53,6 +79,7 @@ def _bootstrap() -> None:
         return
 
     try:
+        _make_pasarguard_importable()
         from app.routers import api_router
 
         if _has_profile_route(api_router.routes):
