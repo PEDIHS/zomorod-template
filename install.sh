@@ -7,6 +7,7 @@ REPO_OWNER="PEDIHS"
 REPO_NAME="zomorod-template"
 PASARGUARD_ROOT="/opt/pasarguard"
 ZOMOROD_ROOT="/opt/zomorod"
+PYTHON_BOOTSTRAP_DIR="/var/lib/pasarguard/zomorod/python"
 TEMPLATE_DIR="/var/lib/pasarguard/templates/subscription"
 TEMPLATE_FILE="${TEMPLATE_DIR}/index.html"
 ENV_FILE="${PASARGUARD_ROOT}/.env"
@@ -77,7 +78,7 @@ command -v python3 >/dev/null 2>&1 || fail "python3 is required"
 
 TMP_DIR="$(mktemp -d)"
 BACKUP_DIR="${ZOMOROD_ROOT}/backups/$(date +%Y%m%d-%H%M%S)"
-mkdir -p "${BACKUP_DIR}" "${ZOMOROD_ROOT}/plugin" "${ZOMOROD_ROOT}/backend" "${TEMPLATE_DIR}" "/var/lib/pasarguard/zomorod"
+mkdir -p "${BACKUP_DIR}" "${ZOMOROD_ROOT}/plugin" "${ZOMOROD_ROOT}/backend" "${TEMPLATE_DIR}" "/var/lib/pasarguard/zomorod" "${PYTHON_BOOTSTRAP_DIR}"
 
 if command -v curl >/dev/null 2>&1; then
   download() { curl -fL --show-error --connect-timeout 20 --max-time 120 --retry 3 --retry-delay 2 -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' "$1" -o "$2"; }
@@ -180,7 +181,7 @@ install_template() {
 install_plugin_files() {
   local file
   log "downloading Zomorod plugin and backend files"
-  for file in plugin/zomorod-special.js plugin/zomorod-runtime.js plugin/integrate-dashboard.sh plugin/update-from-panel.sh backend/zomorod_admin_subscriptions.py; do
+  for file in plugin/zomorod-special.js plugin/zomorod-runtime.js plugin/integrate-dashboard.sh plugin/update-from-panel.sh plugin/sitecustomize.py backend/zomorod_admin_subscriptions.py; do
     download "$(raw_url "${file}")" "${TMP_DIR}/$(basename "${file}")" || fail "could not download ${file}"
   done
   install -m 0644 "${TMP_DIR}/zomorod-special.js" "${ZOMOROD_ROOT}/plugin/zomorod-special.js"
@@ -188,6 +189,11 @@ install_plugin_files() {
   install -m 0755 "${TMP_DIR}/integrate-dashboard.sh" "${ZOMOROD_ROOT}/plugin/integrate-dashboard.sh"
   install -m 0755 "${TMP_DIR}/update-from-panel.sh" "${ZOMOROD_ROOT}/plugin/update-from-panel.sh"
   install -m 0644 "${TMP_DIR}/zomorod_admin_subscriptions.py" "${ZOMOROD_ROOT}/backend/zomorod_admin_subscriptions.py"
+  # Persist Python routing across container recreation. /var/lib/pasarguard is
+  # already the official PasarGuard host volume, so these files exist before
+  # python main.py starts in every newly-created panel container.
+  install -m 0644 "${TMP_DIR}/sitecustomize.py" "${PYTHON_BOOTSTRAP_DIR}/sitecustomize.py"
+  install -m 0644 "${TMP_DIR}/zomorod_admin_subscriptions.py" "${PYTHON_BOOTSTRAP_DIR}/zomorod_admin_subscriptions.py"
 }
 
 install_cli() {
@@ -208,6 +214,16 @@ values={"CUSTOM_TEMPLATES_DIRECTORY":'"/var/lib/pasarguard/templates/"',"SUBSCRI
 for key,value in values.items():
     pattern=re.compile(rf"(?m)^\s*{re.escape(key)}\s*=.*$"); line=f"{key}={value}"
     text=pattern.sub(line,text) if pattern.search(text) else text.rstrip()+"\n"+line+"\n"
+bootstrap="/var/lib/pasarguard/zomorod/python"
+pattern=re.compile(r"(?m)^\s*PYTHONPATH\s*=.*$")
+match=pattern.search(text)
+if match:
+    raw=match.group(0).split("=",1)[1].strip().strip('"').strip("'")
+    parts=[part for part in raw.split(":") if part and part != bootstrap]
+    value=":".join([bootstrap]+parts)
+    text=pattern.sub(f'PYTHONPATH="{value}"',text,count=1)
+else:
+    text=text.rstrip()+f'\nPYTHONPATH="{bootstrap}"\n'
 path.write_text(text,encoding="utf-8")
 PY
 }
@@ -329,7 +345,7 @@ main() {
   printf '  • Backup:                %s\n' "${BACKUP_DIR}"
   printf '  • Settings tab:          Zomorod · Special (Owner + reseller scoped)\n'
   printf '  • Theme storage:         isolated as zomorod-theme\n'
-  printf '  • Persistence:           host systemd guard + Docker start event reconciliation\n'
+  printf '  • Persistence:           pre-start Python bootstrap + host integration guard\n'
   printf '  • Service lifecycle:     safe PasarGuard CLI restart only; no raw Docker lifecycle commands\n'
   printf '  • Update command:        sudo zomorod update\n'
   printf '\nOwner-only /sub/<admin>/<subscription-hash> routes are activated by the safe PasarGuard restart when its official CLI is available.\n'
