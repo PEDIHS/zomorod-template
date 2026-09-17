@@ -280,7 +280,7 @@ safe_restart_pasarguard() {
   fi
 
   log "restarting only the PasarGuard panel through its official CLI"
-  if ! "${pasarguard_cli}" restart; then
+  if ! "${pasarguard_cli}" restart --no-logs; then
     warn "official PasarGuard restart failed; installation is kept and routes will activate after a later successful panel restart"
     return 0
   fi
