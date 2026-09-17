@@ -1,0 +1,45 @@
+name: Apply admin scope fix
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply tested patch
+        run: |
+          set -euo pipefail
+          test -s tools/admin-scope-fix.patch
+          git apply --check tools/admin-scope-fix.patch
+          git apply tools/admin-scope-fix.patch
+          python3 -m py_compile backend/zomorod_admin_subscriptions.py
+          node --check plugin/zomorod-special.js
+          bash -n install.sh
+          grep -q '/api/zomorod/admin-profiles' backend/zomorod_admin_subscriptions.py
+          grep -q '/api/zomorod/admin-profiles' plugin/zomorod-special.js
+          grep -q 'namespace_slug' backend/zomorod_admin_subscriptions.py
+          grep -q 'namespace_slug' plugin/zomorod-special.js
+          grep -q "const VERSION = '4.6.0'" plugin/zomorod-special.js
+
+      - name: Commit final code only
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm tools/admin-scope-fix.patch .github/workflows/apply-admin-scope-fix.yml
+          git add .github/workflows/ci.yml backend/zomorod_admin_subscriptions.py plugin/zomorod-special.js
+          git diff --cached --check
+          git commit -m 'fix: isolate admin branding and subscription paths'
+          git push origin HEAD:main
