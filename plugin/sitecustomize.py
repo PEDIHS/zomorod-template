@@ -70,8 +70,24 @@ def _make_pasarguard_importable() -> None:
     raise RuntimeError("PasarGuard application directory was not found before main.py startup")
 
 
-def _has_profile_route(routes) -> bool:
-    return any(getattr(route, "path", None) == PROFILE_ROUTE for route in routes)
+def _has_profile_route(routes, _seen: set[int] | None = None) -> bool:
+    """Support both classic FastAPI routes and newer _IncludedRouter wrappers."""
+    seen = _seen if _seen is not None else set()
+    for route in routes or []:
+        route_id = id(route)
+        if route_id in seen:
+            continue
+        seen.add(route_id)
+        if getattr(route, "path", None) == PROFILE_ROUTE:
+            return True
+        original_router = getattr(route, "original_router", None)
+        nested_routes = getattr(original_router, "routes", None) if original_router is not None else None
+        if nested_routes is not None and _has_profile_route(nested_routes, seen):
+            return True
+        direct_nested = getattr(route, "routes", None)
+        if direct_nested is not None and _has_profile_route(direct_nested, seen):
+            return True
+    return False
 
 
 def _bootstrap() -> None:
@@ -101,7 +117,7 @@ def _bootstrap() -> None:
         # to the front of the registry.
         native = [route for route in api_router.routes if id(route) in before_ids]
         api_router.routes[:] = added + native
-        _log(f"registered {len(added)} routes before native PasarGuard routes")
+        _log(f"registered {len(added)} included router(s) before native PasarGuard routes")
     except Exception as exc:
         _log(f"FAILED: {type(exc).__name__}: {exc}")
         try:
