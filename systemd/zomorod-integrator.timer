@@ -1,10 +1,11 @@
 [Unit]
-Description=Start persistent Zomorod/PasarGuard integration guard
+Description=Schedule low-impact Zomorod/PasarGuard reconciliation
 
 [Timer]
-OnActiveSec=1s
-OnUnitInactiveSec=10s
-AccuracySec=1s
+OnBootSec=20s
+OnUnitInactiveSec=60s
+AccuracySec=5s
+RandomizedDelaySec=5s
 Unit=zomorod-integrator.service
 Persistent=true
 
