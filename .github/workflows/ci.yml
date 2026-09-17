@@ -47,6 +47,9 @@ jobs:
           grep -q '/api/zomorod/profile' plugin/zomorod-special.js
           grep -q 'support-id-b64' plugin/zomorod-special.js
           grep -q 'zomorod-support-link' plugin/zomorod-runtime.js
+          grep -q '/api/zomorod/update-status' plugin/zomorod-special.js
+          grep -q '/api/zomorod/update' plugin/zomorod-special.js
+          grep -q 'UPDATE_NOTICE_ID' plugin/zomorod-special.js
 
       - name: Validate Python backend addon
         run: |
@@ -60,6 +63,10 @@ jobs:
           grep -q 'db_admin.profile_title = None' backend/zomorod_admin_subscriptions.py
           grep -q 'db_admin.support_url = None' backend/zomorod_admin_subscriptions.py
           grep -q 'ZOMOROD_SHOW_CONFIGS' backend/zomorod_admin_subscriptions.py
+          grep -q '/api/zomorod/update-status' backend/zomorod_admin_subscriptions.py
+          grep -q '/api/zomorod/update' backend/zomorod_admin_subscriptions.py
+          grep -q 'UPDATE_REQUEST_FILE' backend/zomorod_admin_subscriptions.py
+          grep -q 'Depends(_require_owner)' backend/zomorod_admin_subscriptions.py
           if grep -Eq 'db_admin\.profile_title[[:space:]]*=[[:space:]]*model|db_admin\.support_url[[:space:]]*=[[:space:]]*support' backend/zomorod_admin_subscriptions.py; then
             echo 'Reseller Zomorod profile must not mutate native PasarGuard branding fields.' >&2
             exit 1
@@ -89,11 +96,12 @@ jobs:
           bash -n install.sh
           bash -n uninstall.sh
           bash -n plugin/integrate-dashboard.sh
+          bash -n plugin/update-from-panel.sh
 
       - name: Enforce official-only PasarGuard restart safety
         run: |
           set -euo pipefail
-          files=(install.sh plugin/integrate-dashboard.sh)
+          files=(install.sh plugin/integrate-dashboard.sh plugin/update-from-panel.sh)
           forbidden='docker[[:space:]]+(restart|stop|kill|rm)([[:space:]]|$)|docker[[:space:]]+compose[^\n]*(up|down|restart|stop|kill|rm)([[:space:]]|$)|pasarguard[[:space:]]+(down|up)([[:space:]]|$)|systemctl[[:space:]]+restart[[:space:]]+pasarguard'
           if grep -En "$forbidden" "${files[@]}"; then
             echo 'Unsafe direct service lifecycle command found in install/integration path.' >&2
@@ -102,6 +110,7 @@ jobs:
           grep -q 'pasarguard_cli' install.sh
           grep -q 'restart' install.sh
           grep -q -- '--no-restart' install.sh
+          grep -q 'ZOMOROD_CLI.*update' plugin/update-from-panel.sh
 
       - name: Test self-healing integration idempotency
         run: |
@@ -166,10 +175,13 @@ jobs:
           test -s dist/index.html
           test -s plugin/zomorod-special.js
           test -s plugin/zomorod-runtime.js
+          test -s plugin/update-from-panel.sh
           test -s backend/zomorod_admin_subscriptions.py
           test -s systemd/zomorod-integrator.service
           test -s systemd/zomorod-integrator.path
           test -s systemd/zomorod-integrator.timer
+          test -s systemd/zomorod-panel-update.service
+          test -s systemd/zomorod-panel-update.path
 
       - name: Refresh installer prebuilt from validated build
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
