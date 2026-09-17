@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.6.0';
+  const VERSION = '4.7.0';
   const HEADER_PREFIX = 'x-zomorod-';
   const NAV_ID = 'zomorod-special-nav';
   const ROOT_ID = 'zomorod-special-root';
@@ -14,6 +14,9 @@
   let namespaceError = null;
   let cachedAdminProfiles = null;
   let adminProfilesError = null;
+  let cachedUpdate = null;
+  let updatePollTimer = null;
+  const UPDATE_NOTICE_ID = 'zomorod-update-notice';
   let maintainQueued = false;
   let accessResolved = false;
   let accessAllowed = false;
@@ -110,6 +113,14 @@
     #${ROOT_ID} .z-admin-status{grid-column:1/-1;font-size:.66rem;color:hsl(var(--muted-foreground))}
     #${ROOT_ID} .z-admin-status.ok{color:#059669}#${ROOT_ID} .z-admin-status.err{color:#dc2626}
     @media(max-width:900px){#${ROOT_ID} .z-admin-card{grid-template-columns:1fr 1fr}#${ROOT_ID} .z-admin-meta,#${ROOT_ID} .z-admin-card .z-admin-save{grid-column:1/-1}}
+    #${ROOT_ID} .z-update-card{border-color:rgba(184,134,11,.26);background:linear-gradient(135deg,rgba(16,185,129,.055),rgba(184,134,11,.075))}
+    #${ROOT_ID} .z-update-row{display:flex;align-items:center;justify-content:space-between;gap:.8rem;flex-wrap:wrap}
+    #${ROOT_ID} .z-update-sha{direction:ltr;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.66rem;color:hsl(var(--muted-foreground))}
+    #${ROOT_ID} .z-update-btn{border:0;border-radius:var(--radius,.5rem);padding:.62rem .92rem;font:inherit;font-size:.74rem;font-weight:850;color:#fff;background:linear-gradient(135deg,#047857,#065f46 65%,#9a6a17);cursor:pointer}
+    #${ROOT_ID} .z-update-btn:disabled{opacity:.55;cursor:wait}
+    #${UPDATE_NOTICE_ID}{position:fixed;z-index:2147482000;top:12px;left:50%;transform:translateX(-50%);width:min(560px,calc(100vw - 24px));direction:rtl;border:1px solid rgba(184,134,11,.34);border-radius:14px;background:hsl(var(--background));color:hsl(var(--foreground));box-shadow:0 12px 40px rgba(0,0,0,.16);padding:.72rem .8rem;display:flex;align-items:center;justify-content:space-between;gap:.7rem;font-family:inherit}
+    #${UPDATE_NOTICE_ID} .z-un-text{font-size:.73rem;line-height:1.65}#${UPDATE_NOTICE_ID} .z-un-text strong{display:block;font-size:.78rem}
+    #${UPDATE_NOTICE_ID} button{border:0;border-radius:9px;padding:.48rem .65rem;background:#047857;color:white;font:inherit;font-size:.68rem;font-weight:800;white-space:nowrap;cursor:pointer}
   `;
 
   if (!document.getElementById('zomorod-special-style')) {
@@ -347,6 +358,36 @@
     mountShell(`<div class="z-error">Zomorod could not load your settings.<br>${escapeHtml(error?.name === 'AbortError' ? 'Request timed out' : (error?.message || error))}</div>`);
   }
 
+  function shortSha(value) { return typeof value === 'string' && value.length >= 8 ? value.slice(0, 8) : 'unknown'; }
+  function removeUpdateNotice() { document.getElementById(UPDATE_NOTICE_ID)?.remove(); }
+  function renderUpdateNotice() {
+    if (!isOwner || !cachedUpdate?.update_available) { removeUpdateNotice(); return; }
+    let node = document.getElementById(UPDATE_NOTICE_ID);
+    if (!node) { node = document.createElement('div'); node.id = UPDATE_NOTICE_ID; document.body.appendChild(node); }
+    node.innerHTML = `<div class="z-un-text"><strong>نسخه جدید زمرد منتشر شده</strong>از Settings → Zomorod می‌توانید بروزرسانی را مستقیم از پنل انجام دهید.</div><button type="button">باز کردن زمرد</button>`;
+    node.querySelector('button')?.addEventListener('click', () => { if (!isSettingsRoute()) { location.hash = '#/settings'; setTimeout(openPage, 350); } else openPage(); }, { once: true });
+  }
+  async function loadUpdateStatus(refresh = false) {
+    if (!isOwner) { cachedUpdate = null; removeUpdateNotice(); return null; }
+    try { cachedUpdate = await api(`/api/zomorod/update-status${refresh ? '?refresh=true' : ''}`); renderUpdateNotice(); return cachedUpdate; } catch (_) { return cachedUpdate; }
+  }
+  function updateSection() {
+    if (!isOwner) return '';
+    if (!cachedUpdate) return `<section class="z-card"><div class="z-card-note">در حال بررسی بروزرسانی زمرد…</div></section>`;
+    const status = cachedUpdate.status || 'idle', available = cachedUpdate.update_available === true, busy = status === 'queued' || status === 'running';
+    const stateText = busy ? 'بروزرسانی در حال اجراست…' : status === 'failed' ? `خطا: ${escapeHtml(cachedUpdate.message || 'Update failed')}` : available ? 'نسخه جدید آماده نصب است.' : 'زمرد به‌روز است.';
+    return `<section class="z-card z-update-card"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.gem}</span>بروزرسانی Zomorod</h3><div class="z-card-note">بروزرسانی فقط توسط Owner انجام می‌شود و روی Host اجرا می‌شود.</div></div><span class="z-native">OWNER ONLY</span></div><div class="z-update-row"><div><div class="z-status ${status === 'failed' ? 'err' : (available || busy ? '' : 'ok')}">${stateText}</div><div class="z-update-sha">installed ${shortSha(cachedUpdate.installed_sha)} · latest ${shortSha(cachedUpdate.latest_sha)}</div></div><button type="button" id="z-update-now" class="z-update-btn" ${(!available || busy) ? 'disabled' : ''}>${busy ? 'Updating…' : available ? 'Update now' : 'Up to date'}</button></div></section>`;
+  }
+  function stopUpdatePolling() { if (updatePollTimer) clearInterval(updatePollTimer); updatePollTimer = null; }
+  function startUpdatePolling() {
+    stopUpdatePolling(); let attempts = 0;
+    updatePollTimer = setInterval(async () => { attempts += 1; try { const state = await loadUpdateStatus(true); if (active && isOwner && cachedSettings) renderOwner(cachedSettings); if (state?.status === 'success' || (!state?.update_available && state?.installed_sha && state?.latest_sha)) { stopUpdatePolling(); setTimeout(() => location.reload(), 1200); } else if (state?.status === 'failed' || attempts >= 100) stopUpdatePolling(); } catch (_) {} }, 3000);
+  }
+  function bindUpdateActions(root) {
+    if (!isOwner) return;
+    root?.querySelector('#z-update-now')?.addEventListener('click', async (event) => { const button = event.currentTarget; if (!(button instanceof HTMLButtonElement)) return; button.disabled = true; button.textContent = 'Queuing…'; try { await api('/api/zomorod/update', { method: 'POST' }); await loadUpdateStatus(true); if (cachedSettings) renderOwner(cachedSettings); startUpdatePolling(); } catch (error) { alert(`Zomorod update: ${error?.message || error}`); button.disabled = false; button.textContent = 'Update now'; } });
+  }
+
   function namespaceSection() {
     if (!isOwner) return '';
     if (namespaceError) {
@@ -552,6 +593,7 @@
     const html = `
       <section class="z-hero"><div class="z-hero-row"><div class="z-brand"><div class="z-logo">${icons.gem}</div><div><div class="z-title-row"><h2 class="z-title">Zomorod Template</h2><span class="z-special">SPECIAL</span>${roleBadge}</div><div class="z-subtitle">${subtitle}</div></div></div><span class="z-version">v${VERSION}</span></div></section>
       <div class="z-content">
+        ${updateSection()}
         ${adminProfilesSection()}
         ${ownPathSection(profilePayload)}
         <section class="z-card"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.sliders}</span>تنظیمات فروشگاه</h3><div class="z-card-note">نام فروشگاه و پشتیبانی ${isOwner ? 'برای تنظیمات اصلی' : 'فقط برای کاربران همین نمایندگی'} استفاده می‌شوند.</div></div></div><div class="z-grid">
@@ -578,6 +620,7 @@
 
     const root = mountShell(html);
     root?.querySelector('#z-save')?.addEventListener('click', () => isOwner ? saveOwner(cachedSettings) : saveReseller());
+    bindUpdateActions(root);
     bindOwnPath(root);
     bindAdminProfileActions(root);
   }
@@ -732,7 +775,7 @@
     renderLoading();
     try {
       if (isOwner) {
-        const [settings, profile] = await Promise.all([api('/api/settings'), api('/api/zomorod/profile'), loadAdminProfiles()]);
+        const [settings, profile] = await Promise.all([api('/api/settings'), api('/api/zomorod/profile'), loadAdminProfiles(), loadUpdateStatus()]);
         if (!active) return;
         renderOwner(settings, profile);
       } else {
@@ -815,6 +858,7 @@
       currentAdmin = await api('/api/admin');
       accessAllowed = Boolean(currentAdmin?.id || currentAdmin?.username);
       isOwner = currentAdmin?.role?.is_owner === true || currentAdmin?.is_owner === true;
+      if (isOwner) void loadUpdateStatus(); else removeUpdateNotice();
     } catch (_) {
       currentAdmin = null;
       accessAllowed = false;

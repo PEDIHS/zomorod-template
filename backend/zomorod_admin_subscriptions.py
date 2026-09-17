@@ -15,11 +15,15 @@ Admin.support_url fields, so they cannot leak into ordinary /sub/<token> links.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import fcntl
 import json
 import os
 import re
+import time
+import urllib.error
+import urllib.request
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -65,6 +69,12 @@ subscription_operator = SubscriptionOperation(operator_type=OperatorType.API)
 DATA_DIR = Path(os.getenv("ZOMOROD_DATA_DIR", "/var/lib/pasarguard/zomorod"))
 ROUTES_FILE = DATA_DIR / "admin-subscriptions.json"
 LOCK_FILE = DATA_DIR / ".admin-subscriptions.lock"
+INSTALL_STATE_FILE = DATA_DIR / "install-state.json"
+UPDATE_REQUEST_FILE = DATA_DIR / "update-request.json"
+UPDATE_STATUS_FILE = DATA_DIR / "update-status.json"
+UPDATE_REPO_API = "https://api.github.com/repos/PEDIHS/zomorod-template/commits/main"
+UPDATE_CACHE_TTL = 300
+_UPDATE_CACHE: dict[str, object] = {"checked_at": 0.0, "latest_sha": None, "error": None}
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 RESERVED_SLUGS = {"api", "info", "raw", "apps", "usage", "admin", "zomorod"}
 
@@ -162,6 +172,55 @@ def _save_state(state: dict) -> None:
     tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     os.chmod(tmp, 0o600)
     os.replace(tmp, ROUTES_FILE)
+
+
+def _read_json_file(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError, OSError, TypeError):
+        return {}
+
+
+def _atomic_json_write(path: Path, payload: dict) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+
+
+def _valid_commit_sha(value: object) -> str | None:
+    text = str(value or "").strip().lower()
+    return text if re.fullmatch(r"[0-9a-f]{40}", text) else None
+
+
+def _installed_commit() -> str | None:
+    state = _read_json_file(INSTALL_STATE_FILE)
+    return _valid_commit_sha(state.get("commit") or state.get("source_ref"))
+
+
+def _fetch_latest_commit_sync(force: bool = False) -> tuple[str | None, str | None]:
+    now = time.time()
+    if not force and now - float(_UPDATE_CACHE.get("checked_at") or 0) < UPDATE_CACHE_TTL:
+        return _valid_commit_sha(_UPDATE_CACHE.get("latest_sha")), str(_UPDATE_CACHE.get("error") or "") or None
+    request = urllib.request.Request(f"{UPDATE_REPO_API}?t={int(now)}", headers={"Accept": "application/vnd.github+json", "Cache-Control": "no-cache", "User-Agent": "Zomorod-Update-Checker"})
+    latest = None
+    error = None
+    try:
+        with urllib.request.urlopen(request, timeout=8) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        latest = _valid_commit_sha(payload.get("sha"))
+        if latest is None:
+            error = "GitHub returned an invalid commit SHA"
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, OSError) as exc:
+        error = f"{type(exc).__name__}: {exc}"
+    _UPDATE_CACHE.update({"checked_at": now, "latest_sha": latest, "error": error})
+    return latest, error
+
+
+def _update_runtime_state() -> dict:
+    return _read_json_file(UPDATE_STATUS_FILE)
 
 
 def _normalize_slug(value: str | None, username: str, admin_id: int) -> str:
@@ -505,6 +564,31 @@ def _public_routes(state: dict) -> list[dict]:
             }
         )
     return result
+
+
+@router.get("/api/zomorod/update-status")
+async def get_zomorod_update_status(refresh: bool = False, _owner: AdminDetails = Depends(_require_owner)):
+    latest_sha, check_error = await asyncio.to_thread(_fetch_latest_commit_sync, bool(refresh))
+    installed_sha = _installed_commit()
+    runtime = _update_runtime_state()
+    return {"installed_sha": installed_sha, "latest_sha": latest_sha, "update_available": bool(installed_sha and latest_sha and installed_sha != latest_sha), "check_error": check_error, "status": runtime.get("status") or "idle", "message": runtime.get("message") or "", "started_at": runtime.get("started_at"), "finished_at": runtime.get("finished_at"), "target_sha": _valid_commit_sha(runtime.get("target_sha"))}
+
+
+@router.post("/api/zomorod/update", status_code=status.HTTP_202_ACCEPTED)
+async def queue_zomorod_update(_owner: AdminDetails = Depends(_require_owner)):
+    latest_sha, check_error = await asyncio.to_thread(_fetch_latest_commit_sync, True)
+    if latest_sha is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=check_error or "Could not resolve the latest Zomorod commit")
+    installed_sha = _installed_commit()
+    runtime = _update_runtime_state()
+    if runtime.get("status") in {"queued", "running"}:
+        return {"status": runtime.get("status"), "latest_sha": latest_sha, "installed_sha": installed_sha}
+    if installed_sha == latest_sha:
+        return {"status": "current", "latest_sha": latest_sha, "installed_sha": installed_sha}
+    now = datetime.now(UTC).isoformat()
+    _atomic_json_write(UPDATE_REQUEST_FILE, {"requested_at": now, "requested_by": _owner.username, "target_sha": latest_sha})
+    _atomic_json_write(UPDATE_STATUS_FILE, {"status": "queued", "message": "Update queued on the host", "started_at": now, "finished_at": None, "target_sha": latest_sha})
+    return {"status": "queued", "latest_sha": latest_sha, "installed_sha": installed_sha}
 
 
 @router.get("/api/zomorod/profile")

@@ -1,0 +1,10 @@
+[Unit]
+Description=Apply a Zomorod update requested from PasarGuard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/zomorod/plugin/update-from-panel.sh
+TimeoutStartSec=15min
+Nice=5

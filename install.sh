@@ -87,6 +87,20 @@ else
   fail "curl or wget is required"
 fi
 
+resolve_main_source_ref() {
+  [[ "${SOURCE_REF}" == "main" ]] || return 0
+  local metadata="${TMP_DIR}/main-commit.json" sha
+  if ! download "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/commits/main?t=$(date +%s)" "${metadata}"; then warn "could not pin main to an immutable commit; continuing with main"; return 0; fi
+  sha="$(python3 - "${metadata}" <<'PY2'
+import json,re,sys
+try: value=json.load(open(sys.argv[1],encoding='utf-8')).get('sha','')
+except Exception: value=''
+print(value if re.fullmatch(r'[0-9a-f]{40}',value) else '')
+PY2
+)"
+  if [[ "${sha}" =~ ^[0-9a-f]{40}$ ]]; then SOURCE_REF="${sha}"; log "pinned install snapshot to ${SOURCE_REF}"; else warn "GitHub did not return a valid main commit SHA; continuing with main"; fi
+}
+
 raw_url() { printf 'https://raw.githubusercontent.com/%s/%s/%s/%s?zomorod=%s' "${REPO_OWNER}" "${REPO_NAME}" "${SOURCE_REF}" "$1" "$(date +%s)"; }
 
 backup_existing() {
@@ -166,12 +180,13 @@ install_template() {
 install_plugin_files() {
   local file
   log "downloading Zomorod plugin and backend files"
-  for file in plugin/zomorod-special.js plugin/zomorod-runtime.js plugin/integrate-dashboard.sh backend/zomorod_admin_subscriptions.py; do
+  for file in plugin/zomorod-special.js plugin/zomorod-runtime.js plugin/integrate-dashboard.sh plugin/update-from-panel.sh backend/zomorod_admin_subscriptions.py; do
     download "$(raw_url "${file}")" "${TMP_DIR}/$(basename "${file}")" || fail "could not download ${file}"
   done
   install -m 0644 "${TMP_DIR}/zomorod-special.js" "${ZOMOROD_ROOT}/plugin/zomorod-special.js"
   install -m 0644 "${TMP_DIR}/zomorod-runtime.js" "${ZOMOROD_ROOT}/plugin/zomorod-runtime.js"
   install -m 0755 "${TMP_DIR}/integrate-dashboard.sh" "${ZOMOROD_ROOT}/plugin/integrate-dashboard.sh"
+  install -m 0755 "${TMP_DIR}/update-from-panel.sh" "${ZOMOROD_ROOT}/plugin/update-from-panel.sh"
   install -m 0644 "${TMP_DIR}/zomorod_admin_subscriptions.py" "${ZOMOROD_ROOT}/backend/zomorod_admin_subscriptions.py"
 }
 
@@ -201,7 +216,7 @@ install_systemd_units() {
   command -v systemctl >/dev/null 2>&1 || { warn "systemd not detected; integration will run once only"; return 0; }
   log "updating Zomorod host-level persistence guard"
   local unit
-  for unit in zomorod-integrator.service zomorod-integrator.path zomorod-integrator.timer; do
+  for unit in zomorod-integrator.service zomorod-integrator.path zomorod-integrator.timer zomorod-panel-update.service zomorod-panel-update.path; do
     download "$(raw_url "systemd/${unit}")" "${TMP_DIR}/${unit}" || fail "could not download systemd/${unit}"
     local target="/etc/systemd/system/${unit}"
     target="/etc/systemd/system/${unit}"
@@ -213,6 +228,7 @@ install_systemd_units() {
   done
   systemctl daemon-reload
   systemctl enable --now zomorod-integrator.path >/dev/null 2>&1 || warn "path watcher could not be enabled"
+  systemctl enable --now zomorod-panel-update.path >/dev/null 2>&1 || warn "panel update watcher could not be enabled"
   systemctl enable zomorod-integrator.timer >/dev/null 2>&1 || warn "fallback timer could not be enabled"
   systemctl restart zomorod-integrator.timer >/dev/null 2>&1 || warn "fallback timer could not be restarted"
   # Start the persistent Docker lifecycle listener before PasarGuard is restarted.
@@ -220,6 +236,17 @@ install_systemd_units() {
   # re-inject Zomorod (and HS-PG when installed) into the newly created container.
   systemctl enable zomorod-integrator.service >/dev/null 2>&1 || true
   systemctl restart zomorod-integrator.service >/dev/null 2>&1 || warn "persistence guard could not be started immediately"
+}
+
+write_install_state() {
+  python3 - "${SOURCE_REF}" "${MODE}" <<'PY2'
+import json,re,sys
+from datetime import datetime, timezone
+from pathlib import Path
+ref=sys.argv[1]; commit=ref if re.fullmatch(r'[0-9a-f]{40}',ref) else None
+p=Path('/var/lib/pasarguard/zomorod/install-state.json'); p.parent.mkdir(parents=True,exist_ok=True)
+t=p.with_suffix('.json.tmp'); t.write_text(json.dumps({'commit':commit,'source_ref':ref,'mode':sys.argv[2],'installed_at':datetime.now(timezone.utc).isoformat()},indent=2)+'\n',encoding='utf-8'); t.chmod(0o600); t.replace(p)
+PY2
 }
 
 safe_restart_pasarguard() {
@@ -276,6 +303,7 @@ safe_restart_pasarguard() {
 
 main() {
   if [[ "${MODE}" == "update" ]]; then log "updating Zomorod from latest main (cache bypass enabled)"; else log "installing Zomorod"; fi
+  resolve_main_source_ref
   backup_existing
   install_template
   install_plugin_files
@@ -290,6 +318,7 @@ main() {
   fi
 
   safe_restart_pasarguard
+  write_install_state
 
   printf '\n'
   log "installation completed"
