@@ -3,7 +3,9 @@ name: Apply in-panel updater
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/apply-panel-updater.yml']
+    paths:
+      - tools/apply_panel_updater.py
+      - .github/workflows/apply-panel-updater.yml
 
 permissions:
   contents: write
@@ -17,119 +19,7 @@ jobs:
           fetch-depth: 0
       - name: Apply updater feature
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          # Backend: owner-only update status + queue endpoints. The actual update
-          # is deliberately handed to the host through a request file so the
-          # PasarGuard request process never restarts itself.
-          p=Path('backend/zomorod_admin_subscriptions.py'); s=p.read_text()
-          s=s.replace('import base64\nimport fcntl\nimport json\nimport os\nimport re\n', 'import asyncio\nimport base64\nimport fcntl\nimport json\nimport os\nimport re\nimport time\nimport urllib.error\nimport urllib.request\n', 1)
-          s=s.replace('ROUTES_FILE = DATA_DIR / "admin-subscriptions.json"\nLOCK_FILE = DATA_DIR / ".admin-subscriptions.lock"\n', 'ROUTES_FILE = DATA_DIR / "admin-subscriptions.json"\nLOCK_FILE = DATA_DIR / ".admin-subscriptions.lock"\nINSTALL_STATE_FILE = DATA_DIR / "install-state.json"\nUPDATE_REQUEST_FILE = DATA_DIR / "update-request.json"\nUPDATE_STATUS_FILE = DATA_DIR / "update-status.json"\nUPDATE_REPO_API = "https://api.github.com/repos/PEDIHS/zomorod-template/commits/main"\nUPDATE_CACHE_TTL = 300\n_UPDATE_CACHE: dict[str, object] = {"checked_at": 0.0, "latest_sha": None, "error": None}\n', 1)
-          anchor='''def _save_state(state: dict) -> None:\n    DATA_DIR.mkdir(parents=True, exist_ok=True)\n    tmp = ROUTES_FILE.with_suffix(".json.tmp")\n    tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")\n    os.chmod(tmp, 0o600)\n    os.replace(tmp, ROUTES_FILE)\n\n\n'''
-          helpers='''def _read_json_file(path: Path) -> dict:\n    try:\n        data = json.loads(path.read_text(encoding="utf-8"))\n        return data if isinstance(data, dict) else {}\n    except (FileNotFoundError, json.JSONDecodeError, OSError, TypeError):\n        return {}\n\n\ndef _atomic_json_write(path: Path, payload: dict) -> None:\n    DATA_DIR.mkdir(parents=True, exist_ok=True)\n    tmp = path.with_suffix(path.suffix + ".tmp")\n    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")\n    os.chmod(tmp, 0o600)\n    os.replace(tmp, path)\n\n\ndef _valid_commit_sha(value: object) -> str | None:\n    text = str(value or "").strip().lower()\n    return text if re.fullmatch(r"[0-9a-f]{40}", text) else None\n\n\ndef _installed_commit() -> str | None:\n    state = _read_json_file(INSTALL_STATE_FILE)\n    return _valid_commit_sha(state.get("commit") or state.get("source_ref"))\n\n\ndef _fetch_latest_commit_sync(force: bool = False) -> tuple[str | None, str | None]:\n    now = time.time()\n    if not force and now - float(_UPDATE_CACHE.get("checked_at") or 0) < UPDATE_CACHE_TTL:\n        return _valid_commit_sha(_UPDATE_CACHE.get("latest_sha")), str(_UPDATE_CACHE.get("error") or "") or None\n    request = urllib.request.Request(\n        f"{UPDATE_REPO_API}?t={int(now)}",\n        headers={"Accept": "application/vnd.github+json", "Cache-Control": "no-cache", "User-Agent": "Zomorod-Update-Checker"},\n    )\n    latest = None\n    error = None\n    try:\n        with urllib.request.urlopen(request, timeout=8) as response:\n            payload = json.loads(response.read().decode("utf-8"))\n        latest = _valid_commit_sha(payload.get("sha"))\n        if latest is None:\n            error = "GitHub returned an invalid commit SHA"\n    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, OSError) as exc:\n        error = f"{type(exc).__name__}: {exc}"\n    _UPDATE_CACHE.update({"checked_at": now, "latest_sha": latest, "error": error})\n    return latest, error\n\n\ndef _update_runtime_state() -> dict:\n    return _read_json_file(UPDATE_STATUS_FILE)\n\n\n'''
-          if '_fetch_latest_commit_sync' not in s:
-              assert anchor in s
-              s=s.replace(anchor, anchor+helpers, 1)
-          routes='''@router.get("/api/zomorod/update-status")\nasync def get_zomorod_update_status(\n    refresh: bool = False,\n    _owner: AdminDetails = Depends(_require_owner),\n):\n    latest_sha, check_error = await asyncio.to_thread(_fetch_latest_commit_sync, bool(refresh))\n    installed_sha = _installed_commit()\n    runtime = _update_runtime_state()\n    return {\n        "installed_sha": installed_sha,\n        "latest_sha": latest_sha,\n        "update_available": bool(installed_sha and latest_sha and installed_sha != latest_sha),\n        "check_error": check_error,\n        "status": runtime.get("status") or "idle",\n        "message": runtime.get("message") or "",\n        "started_at": runtime.get("started_at"),\n        "finished_at": runtime.get("finished_at"),\n        "target_sha": _valid_commit_sha(runtime.get("target_sha")),\n    }\n\n\n@router.post("/api/zomorod/update", status_code=status.HTTP_202_ACCEPTED)\nasync def queue_zomorod_update(\n    _owner: AdminDetails = Depends(_require_owner),\n):\n    latest_sha, check_error = await asyncio.to_thread(_fetch_latest_commit_sync, True)\n    if latest_sha is None:\n        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=check_error or "Could not resolve the latest Zomorod commit")\n    installed_sha = _installed_commit()\n    runtime = _update_runtime_state()\n    if runtime.get("status") in {"queued", "running"}:\n        return {"status": runtime.get("status"), "latest_sha": latest_sha, "installed_sha": installed_sha}\n    if installed_sha == latest_sha:\n        return {"status": "current", "latest_sha": latest_sha, "installed_sha": installed_sha}\n    now = datetime.now(UTC).isoformat()\n    _atomic_json_write(UPDATE_REQUEST_FILE, {"requested_at": now, "requested_by": _owner.username, "target_sha": latest_sha})\n    _atomic_json_write(UPDATE_STATUS_FILE, {"status": "queued", "message": "Update queued on the host", "started_at": now, "finished_at": None, "target_sha": latest_sha})\n    return {"status": "queued", "latest_sha": latest_sha, "installed_sha": installed_sha}\n\n\n'''
-          if '/api/zomorod/update-status' not in s:
-              marker='@router.get("/api/zomorod/profile")\n'
-              assert marker in s
-              s=s.replace(marker, routes+marker, 1)
-          p.write_text(s)
-
-          # Dashboard UI: PasarGuard-like notice plus owner-only Update button.
-          p=Path('plugin/zomorod-special.js'); s=p.read_text()
-          s=s.replace("const VERSION = '4.6.0';", "const VERSION = '4.7.0';", 1)
-          if 'UPDATE_NOTICE_ID' not in s:
-              s=s.replace('  let cachedAdminProfiles = null;\n  let adminProfilesError = null;\n', '  let cachedAdminProfiles = null;\n  let adminProfilesError = null;\n  let cachedUpdate = null;\n  let updatePollTimer = null;\n  const UPDATE_NOTICE_ID = \'zomorod-update-notice\';\n', 1)
-              css='''    #${ROOT_ID} .z-update-card{border-color:rgba(184,134,11,.26);background:linear-gradient(135deg,rgba(16,185,129,.055),rgba(184,134,11,.075))}\n    #${ROOT_ID} .z-update-row{display:flex;align-items:center;justify-content:space-between;gap:.8rem;flex-wrap:wrap}\n    #${ROOT_ID} .z-update-sha{direction:ltr;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.66rem;color:hsl(var(--muted-foreground))}\n    #${ROOT_ID} .z-update-btn{border:0;border-radius:var(--radius,.5rem);padding:.62rem .92rem;font:inherit;font-size:.74rem;font-weight:850;color:#fff;background:linear-gradient(135deg,#047857,#065f46 65%,#9a6a17);cursor:pointer}\n    #${ROOT_ID} .z-update-btn:disabled{opacity:.55;cursor:wait}\n    #${UPDATE_NOTICE_ID}{position:fixed;z-index:2147482000;top:12px;left:50%;transform:translateX(-50%);width:min(560px,calc(100vw - 24px));direction:rtl;border:1px solid rgba(184,134,11,.34);border-radius:14px;background:hsl(var(--background));color:hsl(var(--foreground));box-shadow:0 12px 40px rgba(0,0,0,.16);padding:.72rem .8rem;display:flex;align-items:center;justify-content:space-between;gap:.7rem;font-family:inherit}\n    #${UPDATE_NOTICE_ID} .z-un-text{font-size:.73rem;line-height:1.65}#${UPDATE_NOTICE_ID} .z-un-text strong{display:block;font-size:.78rem}\n    #${UPDATE_NOTICE_ID} button{border:0;border-radius:9px;padding:.48rem .65rem;background:#047857;color:white;font:inherit;font-size:.68rem;font-weight:800;white-space:nowrap;cursor:pointer}\n'''
-              media='    @media(max-width:900px){#${ROOT_ID} .z-admin-card{grid-template-columns:1fr 1fr}#${ROOT_ID} .z-admin-meta,#${ROOT_ID} .z-admin-card .z-admin-save{grid-column:1/-1}}\n'
-              assert media in s
-              s=s.replace(media, media+css, 1)
-              funcs='''  function shortSha(value) { return typeof value === 'string' && value.length >= 8 ? value.slice(0, 8) : 'unknown'; }\n\n  function removeUpdateNotice() { document.getElementById(UPDATE_NOTICE_ID)?.remove(); }\n\n  function renderUpdateNotice() {\n    if (!isOwner || !cachedUpdate?.update_available) { removeUpdateNotice(); return; }\n    let node = document.getElementById(UPDATE_NOTICE_ID);\n    if (!node) { node = document.createElement('div'); node.id = UPDATE_NOTICE_ID; document.body.appendChild(node); }\n    node.innerHTML = `<div class="z-un-text"><strong>نسخه جدید زمرد منتشر شده</strong>از Settings → Zomorod می‌توانید بروزرسانی را مستقیم از پنل انجام دهید.</div><button type="button">باز کردن زمرد</button>`;\n    node.querySelector('button')?.addEventListener('click', () => { if (!isSettingsRoute()) { location.hash = '#/settings'; setTimeout(openPage, 350); } else openPage(); }, { once: true });\n  }\n\n  async function loadUpdateStatus(refresh = false) {\n    if (!isOwner) { cachedUpdate = null; removeUpdateNotice(); return null; }\n    try { cachedUpdate = await api(`/api/zomorod/update-status${refresh ? '?refresh=true' : ''}`); renderUpdateNotice(); return cachedUpdate; } catch (_) { return cachedUpdate; }\n  }\n\n  function updateSection() {\n    if (!isOwner) return '';\n    if (!cachedUpdate) return `<section class="z-card"><div class="z-card-note">در حال بررسی بروزرسانی زمرد…</div></section>`;\n    const status = cachedUpdate.status || 'idle', available = cachedUpdate.update_available === true, busy = status === 'queued' || status === 'running';\n    const stateText = busy ? 'بروزرسانی در حال اجراست…' : status === 'failed' ? `خطا: ${escapeHtml(cachedUpdate.message || 'Update failed')}` : available ? 'نسخه جدید آماده نصب است.' : 'زمرد به‌روز است.';\n    return `<section class="z-card z-update-card"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.gem}</span>بروزرسانی Zomorod</h3><div class="z-card-note">بروزرسانی فقط توسط Owner انجام می‌شود و روی Host اجرا می‌شود تا Restart امن PasarGuard درخواست وب را قطع نکند.</div></div><span class="z-native">OWNER ONLY</span></div><div class="z-update-row"><div><div class="z-status ${status === 'failed' ? 'err' : (available || busy ? '' : 'ok')}">${stateText}</div><div class="z-update-sha">installed ${shortSha(cachedUpdate.installed_sha)} · latest ${shortSha(cachedUpdate.latest_sha)}</div></div><button type="button" id="z-update-now" class="z-update-btn" ${(!available || busy) ? 'disabled' : ''}>${busy ? 'Updating…' : available ? 'Update now' : 'Up to date'}</button></div></section>`;\n  }\n\n  function stopUpdatePolling() { if (updatePollTimer) clearInterval(updatePollTimer); updatePollTimer = null; }\n  function startUpdatePolling() {\n    stopUpdatePolling(); let attempts = 0;\n    updatePollTimer = setInterval(async () => { attempts += 1; try { const state = await loadUpdateStatus(true); if (active && isOwner && cachedSettings) renderOwner(cachedSettings); if (state?.status === 'success' || (!state?.update_available && state?.installed_sha && state?.latest_sha)) { stopUpdatePolling(); setTimeout(() => location.reload(), 1200); } else if (state?.status === 'failed' || attempts >= 100) stopUpdatePolling(); } catch (_) {} }, 3000);\n  }\n\n  function bindUpdateActions(root) {\n    if (!isOwner) return;\n    root?.querySelector('#z-update-now')?.addEventListener('click', async (event) => { const button = event.currentTarget; if (!(button instanceof HTMLButtonElement)) return; button.disabled = true; button.textContent = 'Queuing…'; try { await api('/api/zomorod/update', { method: 'POST' }); await loadUpdateStatus(true); if (cachedSettings) renderOwner(cachedSettings); startUpdatePolling(); } catch (error) { alert(`Zomorod update: ${error?.message || error}`); button.disabled = false; button.textContent = 'Update now'; } });\n  }\n\n'''
-              marker='  function namespaceSection() {\n'
-              assert marker in s
-              s=s.replace(marker, funcs+marker, 1)
-              s=s.replace('      <div class="z-content">\n        ${adminProfilesSection()}\n', '      <div class="z-content">\n        ${updateSection()}\n        ${adminProfilesSection()}\n', 1)
-              s=s.replace('    bindOwnPath(root);\n    bindAdminProfileActions(root);\n', '    bindUpdateActions(root);\n    bindOwnPath(root);\n    bindAdminProfileActions(root);\n', 1)
-              old="const [settings, profile] = await Promise.all([api('/api/settings'), api('/api/zomorod/profile'), loadAdminProfiles()]);"
-              assert old in s
-              s=s.replace(old, "const [settings, profile] = await Promise.all([api('/api/settings'), api('/api/zomorod/profile'), loadAdminProfiles(), loadUpdateStatus()]);", 1)
-              s=s.replace('      isOwner = currentAdmin?.role?.is_owner === true || currentAdmin?.is_owner === true;\n', '      isOwner = currentAdmin?.role?.is_owner === true || currentAdmin?.is_owner === true;\n      if (isOwner) void loadUpdateStatus(); else removeUpdateNotice();\n', 1)
-          p.write_text(s)
-
-          # Installer: pin first install to an immutable SHA, install the host bridge,
-          # persist the installed SHA, and enable the update request watcher.
-          p=Path('install.sh'); s=p.read_text()
-          if 'resolve_main_source_ref()' not in s:
-              raw="raw_url() { printf 'https://raw.githubusercontent.com/%s/%s/%s/%s?zomorod=%s' \"${REPO_OWNER}\" \"${REPO_NAME}\" \"${SOURCE_REF}\" \"$1\" \"$(date +%s)\"; }\n\n"
-              assert raw in s
-              resolver='''resolve_main_source_ref() {\n  [[ "${SOURCE_REF}" == "main" ]] || return 0\n  local metadata="${TMP_DIR}/main-commit.json" sha\n  if ! download "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/commits/main?t=$(date +%s)" "${metadata}"; then warn "could not pin main to an immutable commit; continuing with main"; return 0; fi\n  sha="$(python3 - "${metadata}" <<'PY2'\nimport json,re,sys\ntry: value=json.load(open(sys.argv[1],encoding='utf-8')).get('sha','')\nexcept Exception: value=''\nprint(value if re.fullmatch(r'[0-9a-f]{40}',value) else '')\nPY2\n)"\n  if [[ "${sha}" =~ ^[0-9a-f]{40}$ ]]; then SOURCE_REF="${sha}"; log "pinned install snapshot to ${SOURCE_REF}"; else warn "GitHub did not return a valid main commit SHA; continuing with main"; fi\n}\n\n'''
-              s=s.replace(raw, resolver+raw, 1)
-              s=s.replace('plugin/integrate-dashboard.sh backend/zomorod_admin_subscriptions.py', 'plugin/integrate-dashboard.sh plugin/update-from-panel.sh backend/zomorod_admin_subscriptions.py', 1)
-              s=s.replace('install -m 0755 "${TMP_DIR}/integrate-dashboard.sh" "${ZOMOROD_ROOT}/plugin/integrate-dashboard.sh"', 'install -m 0755 "${TMP_DIR}/integrate-dashboard.sh" "${ZOMOROD_ROOT}/plugin/integrate-dashboard.sh"\n  install -m 0755 "${TMP_DIR}/update-from-panel.sh" "${ZOMOROD_ROOT}/plugin/update-from-panel.sh"', 1)
-              s=s.replace('for unit in zomorod-integrator.service zomorod-integrator.path zomorod-integrator.timer; do', 'for unit in zomorod-integrator.service zomorod-integrator.path zomorod-integrator.timer zomorod-panel-update.service zomorod-panel-update.path; do', 1)
-              s=s.replace('systemctl enable --now zomorod-integrator.path >/dev/null 2>&1 || warn "path watcher could not be enabled"', 'systemctl enable --now zomorod-integrator.path >/dev/null 2>&1 || warn "path watcher could not be enabled"\n  systemctl enable --now zomorod-panel-update.path >/dev/null 2>&1 || warn "panel update watcher could not be enabled"', 1)
-              state='''write_install_state() {\n  python3 - "${SOURCE_REF}" "${MODE}" <<'PY2'\nimport json,re,sys\nfrom datetime import datetime, timezone\nfrom pathlib import Path\nref=sys.argv[1]; commit=ref if re.fullmatch(r'[0-9a-f]{40}',ref) else None\np=Path('/var/lib/pasarguard/zomorod/install-state.json'); p.parent.mkdir(parents=True,exist_ok=True)\nt=p.with_suffix('.json.tmp'); t.write_text(json.dumps({'commit':commit,'source_ref':ref,'mode':sys.argv[2],'installed_at':datetime.now(timezone.utc).isoformat()},indent=2)+'\\n',encoding='utf-8'); t.chmod(0o600); t.replace(p)\nPY2\n}\n\n'''
-              s=s.replace('safe_restart_pasarguard() {\n', state+'safe_restart_pasarguard() {\n', 1)
-              main='''main() {\n  if [[ "${MODE}" == "update" ]]; then log "updating Zomorod from latest main (cache bypass enabled)"; else log "installing Zomorod"; fi\n'''
-              assert main in s
-              s=s.replace(main, main+'  resolve_main_source_ref\n', 1)
-              s=s.replace('  safe_restart_pasarguard\n\n  printf', '  safe_restart_pasarguard\n  write_install_state\n\n  printf', 1)
-              s=s.replace("  printf '  • Update command:        sudo zomorod update\\n'", "  printf '  • Update command:        sudo zomorod update / Settings → Zomorod\\n'", 1)
-          p.write_text(s)
-
-          Path('plugin/update-from-panel.sh').write_text(r'''#!/usr/bin/env bash
-set -Eeuo pipefail
-DATA_DIR="${ZOMOROD_DATA_DIR:-/var/lib/pasarguard/zomorod}"
-REQUEST_FILE="${DATA_DIR}/update-request.json"
-STATUS_FILE="${DATA_DIR}/update-status.json"
-LOG_FILE="${DATA_DIR}/panel-update.log"
-LOCK_FILE="${DATA_DIR}/.panel-update.lock"
-ZOMOROD_CLI="${ZOMOROD_CLI:-/usr/local/bin/zomorod}"
-mkdir -p "${DATA_DIR}"; touch "${LOCK_FILE}"; chmod 600 "${LOCK_FILE}" || true
-exec 9>"${LOCK_FILE}"; flock -n 9 || exit 0
-[[ -s "${REQUEST_FILE}" ]] || exit 0
-read_target() { python3 - "${REQUEST_FILE}" <<'PY2'
-import json,re,sys
-try: value=json.load(open(sys.argv[1],encoding='utf-8')).get('target_sha','')
-except Exception: value=''
-print(value if re.fullmatch(r'[0-9a-f]{40}',str(value)) else '')
-PY2
-}
-write_status() { local state="$1" message="$2" finished="${3:-}" target="${4:-}"; python3 - "${STATUS_FILE}" "$state" "$message" "$finished" "$target" <<'PY2'
-import json,sys
-from datetime import datetime, timezone
-from pathlib import Path
-p=Path(sys.argv[1]); state=sys.argv[2]; message=sys.argv[3]; finished=sys.argv[4]; target=sys.argv[5] or None
-try: old=json.loads(p.read_text(encoding='utf-8'))
-except Exception: old={}
-now=datetime.now(timezone.utc).isoformat(); payload={'status':state,'message':message,'started_at':old.get('started_at') or now,'finished_at':now if finished else None,'target_sha':target or old.get('target_sha')}
-t=p.with_suffix('.json.tmp'); t.write_text(json.dumps(payload,indent=2)+'\n',encoding='utf-8'); t.chmod(0o600); t.replace(p)
-PY2
-}
-target="$(read_target)"; write_status running "Zomorod update is running on the host" "" "$target"; rm -f "${LOG_FILE}"
-if [[ ! -x "${ZOMOROD_CLI}" ]]; then write_status failed "Zomorod CLI was not found on the host" yes "$target"; rm -f "${REQUEST_FILE}"; exit 1; fi
-set +e; "${ZOMOROD_CLI}" update >"${LOG_FILE}" 2>&1; rc=$?; set -e
-chmod 600 "${LOG_FILE}" || true; rm -f "${REQUEST_FILE}"
-if [[ $rc -eq 0 ]]; then write_status success "Zomorod update completed successfully" yes "$target"; exit 0; fi
-write_status failed "Zomorod update failed; see panel-update.log" yes "$target"; exit "$rc"
-''')
-          Path('systemd/zomorod-panel-update.path').write_text('''[Unit]\nDescription=Watch for Zomorod panel update requests\n\n[Path]\nPathExists=/var/lib/pasarguard/zomorod/update-request.json\nUnit=zomorod-panel-update.service\n\n[Install]\nWantedBy=multi-user.target\n''')
-          Path('systemd/zomorod-panel-update.service').write_text('''[Unit]\nDescription=Apply a Zomorod update requested from PasarGuard\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=oneshot\nExecStart=/opt/zomorod/plugin/update-from-panel.sh\nTimeoutStartSec=15min\nNice=5\n''')
-
-          # CI guards for the new control plane.
-          p=Path('.github/workflows/ci.yml'); s=p.read_text()
-          if '/api/zomorod/update-status' not in s:
-              s=s.replace("          grep -q 'zomorod-support-link' plugin/zomorod-runtime.js\n", "          grep -q 'zomorod-support-link' plugin/zomorod-runtime.js\n          grep -q '/api/zomorod/update-status' plugin/zomorod-special.js\n          grep -q '/api/zomorod/update' plugin/zomorod-special.js\n", 1)
-              s=s.replace("          grep -q 'ZOMOROD_SHOW_CONFIGS' backend/zomorod_admin_subscriptions.py\n", "          grep -q 'ZOMOROD_SHOW_CONFIGS' backend/zomorod_admin_subscriptions.py\n          grep -q '/api/zomorod/update-status' backend/zomorod_admin_subscriptions.py\n          grep -q '/api/zomorod/update' backend/zomorod_admin_subscriptions.py\n          grep -q 'UPDATE_REQUEST_FILE' backend/zomorod_admin_subscriptions.py\n", 1)
-              s=s.replace('          bash -n plugin/integrate-dashboard.sh\n', '          bash -n plugin/integrate-dashboard.sh\n          bash -n plugin/update-from-panel.sh\n', 1)
-              s=s.replace('          files=(install.sh plugin/integrate-dashboard.sh)\n', '          files=(install.sh plugin/integrate-dashboard.sh plugin/update-from-panel.sh)\n', 1)
-              s=s.replace('          test -s plugin/zomorod-runtime.js\n', '          test -s plugin/zomorod-runtime.js\n          test -s plugin/update-from-panel.sh\n', 1)
-              s=s.replace('          test -s systemd/zomorod-integrator.timer\n', '          test -s systemd/zomorod-integrator.timer\n          test -s systemd/zomorod-panel-update.service\n          test -s systemd/zomorod-panel-update.path\n', 1)
-          p.write_text(s)
-          PY
+          python3 tools/apply_panel_updater.py
           chmod +x plugin/update-from-panel.sh
           python3 -m py_compile backend/zomorod_admin_subscriptions.py
           node --check plugin/zomorod-special.js
@@ -137,7 +27,7 @@ write_status failed "Zomorod update failed; see panel-update.log" yes "$target";
           bash -n plugin/update-from-panel.sh
       - name: Commit feature
         run: |
-          rm -f .github/workflows/apply-panel-updater.yml
+          rm -f tools/apply_panel_updater.py .github/workflows/apply-panel-updater.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
