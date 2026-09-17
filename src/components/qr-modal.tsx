@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { QRCodeSVG } from 'qrcode.react';
+import { QRCodeCanvas } from 'qrcode.react';
 import { Copy, Check, ScanQrCode, AlertCircle, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -79,8 +79,13 @@ export const QRModal = memo(({ link, open, onOpenChange }: QRModalProps) => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="min-w-0 max-h-[calc(100dvh-1rem)] overflow-y-auto overflow-x-hidden overscroll-contain rounded-[24px] p-4 sm:p-5"
-        style={{ width: 'min(440px, calc(100vw - 16px))', maxWidth: 'calc(100vw - 16px)' }}
+        className="max-h-[calc(100dvh-24px)] overflow-y-auto rounded-[24px] p-4 sm:p-5"
+        style={{
+          width: 'calc(100vw - 24px)',
+          maxWidth: '420px',
+          boxSizing: 'border-box',
+          overflowX: 'hidden',
+        }}
         dir={dir}
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
@@ -118,20 +123,33 @@ export const QRModal = memo(({ link, open, onOpenChange }: QRModalProps) => {
           )}
 
           {canGenerateQR ? (
-            <div className="w-full min-w-0 rounded-[22px] border border-black/5 bg-white p-3 shadow-sm sm:p-4">
+            <div
+              className="flex w-full min-w-0 justify-center rounded-[22px] border border-black/5 bg-white p-3 shadow-sm sm:p-4"
+              style={{ overflow: 'visible' }}
+            >
               <div
-                className="mx-auto max-w-full rounded-xl bg-white p-1"
-                style={{ width: 'min(72vw, 256px)', maxWidth: '100%' }}
+                className="shrink-0 bg-white"
+                style={{
+                  width: 'min(224px, calc(100vw - 96px))',
+                  height: 'min(224px, calc(100vw - 96px))',
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                }}
               >
-                <QRCodeSVG
+                <QRCodeCanvas
                   value={qrValue}
-                  size={256}
+                  size={224}
                   level="L"
-                  marginSize={2}
+                  marginSize={4}
                   bgColor="#ffffff"
                   fgColor="#071c16"
-                  className="block max-w-full"
-                  style={{ display: 'block', width: '100%', height: 'auto', maxWidth: '100%' }}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    height: '100%',
+                    maxWidth: '100%',
+                    maxHeight: '100%',
+                  }}
                   role="img"
                   aria-label={`${t('qr.title')} - ${link.name}`}
                 />
