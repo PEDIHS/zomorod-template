@@ -57,6 +57,7 @@ jobs:
           grep -q 'normalizeConfigLinks' src/hooks/useUserData.ts
           grep -q '/raw' src/hooks/useUserData.ts
           grep -q 'getSubscriptionPath' src/hooks/useUserData.ts
+          grep -Fq 'rawData?.body?.links' src/hooks/useUserData.ts
 
       - name: Validate Python backend addon
         run: |
