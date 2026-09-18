@@ -54,7 +54,9 @@ jobs:
           grep -q 'showConfigs: true' plugin/zomorod-runtime.js
           grep -q '\[role="tablist"\]' plugin/zomorod-special.js
           grep -q 'querySelectorAll(tabSelector).length >= 1' plugin/zomorod-special.js
-          grep -q 'getSubscriptionPath()/raw' <(tr -d '[:space:]' < src/hooks/useUserData.ts)
+          grep -q 'normalizeConfigLinks' src/hooks/useUserData.ts
+          grep -q '/raw' src/hooks/useUserData.ts
+          grep -q 'getSubscriptionPath' src/hooks/useUserData.ts
 
       - name: Validate Python backend addon
         run: |
