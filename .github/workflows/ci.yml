@@ -50,6 +50,11 @@ jobs:
           grep -q '/api/zomorod/update-status' plugin/zomorod-special.js
           grep -q '/api/zomorod/update' plugin/zomorod-special.js
           grep -q 'UPDATE_NOTICE_ID' plugin/zomorod-special.js
+          grep -q 'showConfigs: true' plugin/zomorod-special.js
+          grep -q 'showConfigs: true' plugin/zomorod-runtime.js
+          grep -q '\[role="tablist"\]' plugin/zomorod-special.js
+          grep -q 'querySelectorAll(tabSelector).length >= 1' plugin/zomorod-special.js
+          grep -q 'getSubscriptionPath()/raw' <(tr -d '[:space:]' < src/hooks/useUserData.ts)
 
       - name: Validate Python backend addon
         run: |
@@ -63,6 +68,7 @@ jobs:
           grep -q 'db_admin.profile_title = None' backend/zomorod_admin_subscriptions.py
           grep -q 'db_admin.support_url = None' backend/zomorod_admin_subscriptions.py
           grep -q 'ZOMOROD_SHOW_CONFIGS' backend/zomorod_admin_subscriptions.py
+          grep -q '"show_configs": True' backend/zomorod_admin_subscriptions.py
           grep -q '/api/zomorod/update-status' backend/zomorod_admin_subscriptions.py
           grep -q '/api/zomorod/update' backend/zomorod_admin_subscriptions.py
           grep -q 'UPDATE_REQUEST_FILE' backend/zomorod_admin_subscriptions.py

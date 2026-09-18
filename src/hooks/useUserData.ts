@@ -3,11 +3,21 @@ import { fetcher, getBaseUrl } from '@/lib/fetcher';
 import useSWRImmutable from 'swr/immutable'
 import type { UserInfo, ConfigData, ChartData, AppClient, InfoHeaders } from '@/types/user';
 
+const getSubscriptionPath = () => window.location.pathname.replace(/\/+$/, '');
+
+const normalizeConfigLinks = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((link): link is string => typeof link === 'string')
+    .map((link) => link.trim())
+    .filter((link) => link.length > 0 && /^[a-z][a-z0-9+.-]*:\/\//i.test(link));
+};
+
 export const useUserInfo = () => {
   const initial = typeof window !== 'undefined' ? window.__INITIAL_DATA__ : undefined;
   
   const { data: response, error, isLoading, isValidating, mutate } = useSWR<{ data: UserInfo; headers: InfoHeaders }>(
-    `${getBaseUrl()}${window.location.pathname}/info`,
+    `${getBaseUrl()}${getSubscriptionPath()}/info`,
     fetcher,
     {
       // Don't use fallbackData - we'll handle initial data separately
@@ -49,29 +59,31 @@ export const useUserInfo = () => {
 };
 
 export const useConfigData = () => {
-  const initialLinksArray = typeof window !== 'undefined'
-    ? window.__INITIAL_DATA__?.links
-    : undefined;
-  
-  // Only use Jinja-rendered data, no network requests
-  const data: ConfigData | undefined = initialLinksArray && initialLinksArray.length > 0
-    ? {
-        links: initialLinksArray.filter(link => 
-          link && link.length > 0 && (
-            link.startsWith('vless://') ||
-            link.startsWith('vmess://') ||
-            link.startsWith('trojan://') ||
-            link.startsWith('ss://') ||
-            link.startsWith('shadowsocks://') ||
-            link.startsWith('wireguard://') ||
-            link.startsWith('hysteria2://') ||
-            link.startsWith('hysteria://')
-          )
-        )
-      }
-    : undefined;
+  const initialLinks = typeof window !== 'undefined'
+    ? normalizeConfigLinks(window.__INITIAL_DATA__?.links)
+    : [];
 
-  return { data };
+  const { data: rawData, error, isLoading } = useSWR<ConfigData>(
+    initialLinks.length > 0
+      ? null
+      : `${getBaseUrl()}${getSubscriptionPath()}/raw`,
+    fetcher,
+    {
+      errorRetryCount: 3,
+      errorRetryInterval: 2500,
+      revalidateOnFocus: false,
+      dedupingInterval: 5000,
+      onError: (err) => {
+        console.warn('Failed to fetch subscription configs:', err);
+      },
+    }
+  );
+
+  const fallbackLinks = normalizeConfigLinks(rawData?.links);
+  const links = initialLinks.length > 0 ? initialLinks : fallbackLinks;
+  const data: ConfigData | undefined = links.length > 0 ? { links } : undefined;
+
+  return { data, error, isLoading };
 };
 
 export const useChartData = (
@@ -80,7 +92,7 @@ export const useChartData = (
   shouldFetch: boolean = true
 ) => {
   const { data: chartData, error: chartError } = useSWR<ChartData>(
-    shouldFetch ? `${getBaseUrl()}${window.location.pathname}/usage?start=${startTime.toISOString()}&period=${period}` : null,
+    shouldFetch ? `${getBaseUrl()}${getSubscriptionPath()}/usage?start=${startTime.toISOString()}&period=${period}` : null,
     fetcher,
     {
       errorRetryCount: 2,
@@ -106,7 +118,7 @@ export const useApps = () => {
   const { data, error, isLoading } = useSWRImmutable<AppClient[]>(
     initialAppsArray && initialAppsArray.length > 0
       ? null
-      : `${getBaseUrl()}${window.location.pathname}/apps`,
+      : `${getBaseUrl()}${getSubscriptionPath()}/apps`,
     fetcher,
     {
       errorRetryCount: 2,

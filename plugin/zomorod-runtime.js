@@ -6,7 +6,7 @@
   const DEFAULTS = {
     storeName: 'زمرد',
     supportId: '',
-    showConfigs: false,
+    showConfigs: true,
     showWireGuard: false,
     showPing: true,
     showApps: true,

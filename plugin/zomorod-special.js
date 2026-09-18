@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.0';
+  const VERSION = '4.7.1';
   const HEADER_PREFIX = 'x-zomorod-';
   const NAV_ID = 'zomorod-special-nav';
   const ROOT_ID = 'zomorod-special-root';
@@ -26,7 +26,7 @@
   const defaults = {
     storeName: 'زمرد',
     supportId: '',
-    showConfigs: false,
+    showConfigs: true,
     showWireGuard: false,
     showPing: true,
     showApps: true,
@@ -287,9 +287,15 @@
 
   function findSettingsTabBar() {
     if (!isSettingsRoute()) return null;
+    const tabSelector = ':scope > button, :scope > a, :scope > [role="tab"]';
+    const isTabBar = (node) => node instanceof HTMLElement && node.querySelectorAll(tabSelector).length >= 1;
+
     const preferred = document.querySelector('.scrollbar-hide.flex.overflow-x-auto.border-b');
-    if (preferred instanceof HTMLElement && preferred.querySelectorAll(':scope > button').length >= 2) return preferred;
-    return [...document.querySelectorAll('.scrollbar-hide, [class*="overflow-x-auto"][class*="border-b"]')].find((node) => node instanceof HTMLElement && node.querySelectorAll(':scope > button').length >= 2) || null;
+    if (isTabBar(preferred)) return preferred;
+
+    return [...document.querySelectorAll(
+      '[role="tablist"], .scrollbar-hide, [class*="overflow-x-auto"][class*="border-b"]'
+    )].find(isTabBar) || null;
   }
 
   function getOutlet(tabBar = findSettingsTabBar()) {
@@ -797,7 +803,7 @@
     if (!tabBar.dataset.zomorodBound) {
       tabBar.dataset.zomorodBound = '1';
       tabBar.addEventListener('click', (event) => {
-        const button = event.target instanceof Element ? event.target.closest('button') : null;
+        const button = event.target instanceof Element ? event.target.closest('button, a, [role="tab"]') : null;
         if (button && button.id !== NAV_ID && active) deactivate();
       }, true);
     }

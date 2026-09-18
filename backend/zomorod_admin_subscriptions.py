@@ -102,7 +102,7 @@ ZOMOROD_VARIABLE_KEYS = {
 }
 
 PROFILE_DEFAULTS = {
-    "show_configs": False,
+    "show_configs": True,
     "show_wireguard": False,
     "show_ping": True,
     "show_apps": True,
