@@ -58,12 +58,19 @@ export const useUserInfo = () => {
   return { data, headers, error, isLoading: shouldShowLoading, isValidating, refresh: handleRefresh };
 };
 
+type RawConfigData = {
+  links?: unknown;
+  body?: {
+    links?: unknown;
+  };
+};
+
 export const useConfigData = () => {
   const initialLinks = typeof window !== 'undefined'
     ? normalizeConfigLinks(window.__INITIAL_DATA__?.links)
     : [];
 
-  const { data: rawData, error, isLoading } = useSWR<ConfigData>(
+  const { data: rawData, error, isLoading } = useSWR<RawConfigData>(
     initialLinks.length > 0
       ? null
       : `${getBaseUrl()}${getSubscriptionPath()}/raw`,
@@ -79,7 +86,10 @@ export const useConfigData = () => {
     }
   );
 
-  const fallbackLinks = normalizeConfigLinks(rawData?.links);
+  // PasarGuard <= older releases returned { links }, while current releases
+  // return { body: { links }, headers }. Support both so GitHub installs keep
+  // showing configs regardless of the panel version.
+  const fallbackLinks = normalizeConfigLinks(rawData?.body?.links ?? rawData?.links);
   const links = initialLinks.length > 0 ? initialLinks : fallbackLinks;
   const data: ConfigData | undefined = links.length > 0 ? { links } : undefined;
 
