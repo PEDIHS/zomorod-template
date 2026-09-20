@@ -305,8 +305,10 @@
       nativeWireGuard: subscription.manual_sub_request?.wireguard !== false,
       apps: Array.isArray(subscription.applications) ? subscription.applications : [],
     };
-    if (!profilePayload?.has_overrides) return legacy;
     const scoped = extractReseller(profilePayload);
+    if (!profilePayload?.has_overrides) {
+      return { ...legacy, themePrimary: scoped.themePrimary, themeSecondary: scoped.themeSecondary };
+    }
     return {
       ...legacy,
       storeName: scoped.storeName,
