@@ -36,10 +36,21 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
     [parsedLinks]
   );
 
-  // Memoize subscription URL to avoid recalculating on every render
-  const subscriptionUrl = useMemo(() =>
-    `${window.location.origin}${window.location.pathname.replace(/\/info$/, '')}`,
-    []
+  // Memoize subscription URL to avoid recalculating on every render.
+  // Strip both a trailing slash and an accidental /info suffix so format URLs
+  // such as /wireguard never end up with a double slash.
+  const subscriptionUrl = useMemo(() => {
+    const path = window.location.pathname.replace(/\/+$/, '').replace(/\/info$/, '');
+    return `${window.location.origin}${path}`;
+  }, []);
+
+  const hasWireGuard = useMemo(
+    () => parsedLinks.some((link) => link.protocol === 'wireguard'),
+    [parsedLinks]
+  );
+  const wireGuardArchiveUrl = useMemo(
+    () => `${subscriptionUrl}/wireguard`,
+    [subscriptionUrl]
   );
 
   // Memoize all configs text to avoid recalculating on every render
@@ -81,17 +92,25 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
   const handleDownloadWireGuard = useCallback((link: ParsedLink) => {
     try {
       const payload = getWireGuardDownloadPayload(link.raw);
-      if (!payload) {
-        throw new Error('WireGuard config not available');
+      if (payload) {
+        downloadTextFile(payload.content, payload.fileName);
+      } else {
+        // Keep the file action visible for every WireGuard link. If a future
+        // PasarGuard URI contains fields this client cannot convert locally,
+        // fall back to PasarGuard's canonical WireGuard ZIP endpoint.
+        const anchor = document.createElement('a');
+        anchor.href = wireGuardArchiveUrl;
+        anchor.download = 'wireguard.zip';
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
       }
-
-      downloadTextFile(payload.content, payload.fileName);
       toast.success(t('configActions.downloadStarted'));
     } catch (error) {
       console.error('Failed to download WireGuard config:', error);
       toast.error(t('configActions.downloadFailed'));
     }
-  }, [t]);
+  }, [t, wireGuardArchiveUrl]);
 
   const getProtocolBadge = useCallback((protocol: ParsedLink['protocol']) => {
     if (protocol === 'unknown') return 'SUB';
@@ -149,6 +168,23 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
         </div>
       </div>
 
+      {hasWireGuard && (
+        <a
+          href={wireGuardArchiveUrl}
+          className="flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 text-foreground no-underline shadow-sm transition hover:bg-accent"
+          title={t('configActions.downloadWireGuard')}
+          download
+        >
+          <span className="flex min-w-0 items-center gap-3">
+            <span className="treasury-link-action pointer-events-none shrink-0" aria-hidden="true">
+              <Download className="size-4" />
+            </span>
+            <strong className="truncate text-sm font-semibold">{t('configActions.downloadWireGuard')}</strong>
+          </span>
+          <span className="ios-protocol-badge">ZIP</span>
+        </a>
+      )}
+
       <div className="treasury-config-grid">
         {parsedLinks.map((link, index) => {
           const copied = isCopied(`${link.raw}:config`);
@@ -171,7 +207,7 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
                 <b dir="ltr">{serverPings[index]} ms</b>
               </div>
               <div className="treasury-link-actions">
-                {getWireGuardDownloadPayload(link.raw) && (
+                {link.protocol === 'wireguard' && (
                   <button type="button" onClick={() => handleDownloadWireGuard(link)} className="treasury-link-action" title={t('configActions.downloadWireGuard')}>
                     <Download className="size-4" />
                   </button>
