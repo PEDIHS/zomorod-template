@@ -915,7 +915,7 @@
       settings.subscription ||= {};
       const subscription = settings.subscription;
       const responseHeaders = { ...(subscription.response_headers || {}) };
-      ['enabled','store-name','store-name-b64','support-id-b64','show-configs','show-wireguard','show-ping','show-apps','show-announcement','announcement-mode','announcement-times','announcement-duration'].forEach((key) => removeHeader(responseHeaders, key));
+      ['enabled','store-name','store-name-b64','support-id-b64','show-configs','show-wireguard','show-ping','show-apps','show-announcement','announcement-mode','announcement-times','announcement-duration','theme-primary','theme-secondary'].forEach((key) => removeHeader(responseHeaders, key));
       subscription.response_headers = responseHeaders;
       // Store/support are per-admin now; never keep a global support URL that leaks to every admin.
       subscription.support_url = '';
