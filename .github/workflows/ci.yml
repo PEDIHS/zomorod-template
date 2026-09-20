@@ -52,6 +52,10 @@ jobs:
           grep -q 'UPDATE_NOTICE_ID' plugin/zomorod-special.js
           grep -q 'showConfigs: true' plugin/zomorod-special.js
           grep -q 'showConfigs: true' plugin/zomorod-runtime.js
+          grep -q '/api/zomorod/appearance' plugin/zomorod-special.js
+          grep -q 'data-color-plane' plugin/zomorod-special.js
+          grep -q 'zomorod-theme-style' plugin/zomorod-runtime.js
+          grep -q 'theme-primary' plugin/zomorod-runtime.js
           grep -q '\[role="tablist"\]' plugin/zomorod-special.js
           grep -q 'querySelectorAll(tabSelector).length >= 1' plugin/zomorod-special.js
           grep -q 'normalizeConfigLinks' src/hooks/useUserData.ts
@@ -71,6 +75,10 @@ jobs:
           grep -q 'db_admin.profile_title = None' backend/zomorod_admin_subscriptions.py
           grep -q 'db_admin.support_url = None' backend/zomorod_admin_subscriptions.py
           grep -q 'ZOMOROD_SHOW_CONFIGS' backend/zomorod_admin_subscriptions.py
+          grep -q 'ZOMOROD_THEME_PRIMARY' backend/zomorod_admin_subscriptions.py
+          grep -q 'ZOMOROD_THEME_SECONDARY' backend/zomorod_admin_subscriptions.py
+          grep -q 'ZOMOROD_PROFILE_VARIABLE_KEYS' backend/zomorod_admin_subscriptions.py
+          grep -q '/api/zomorod/appearance' backend/zomorod_admin_subscriptions.py
           grep -q '"show_configs": True' backend/zomorod_admin_subscriptions.py
           grep -q '/api/zomorod/update-status' backend/zomorod_admin_subscriptions.py
           grep -q '/api/zomorod/update' backend/zomorod_admin_subscriptions.py

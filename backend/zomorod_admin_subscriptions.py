@@ -88,6 +88,8 @@ VAR_SHOW_ANNOUNCEMENT = "ZOMOROD_SHOW_ANNOUNCEMENT"
 VAR_ANNOUNCEMENT_MODE = "ZOMOROD_ANNOUNCEMENT_MODE"
 VAR_ANNOUNCEMENT_TIMES = "ZOMOROD_ANNOUNCEMENT_TIMES"
 VAR_ANNOUNCEMENT_DURATION = "ZOMOROD_ANNOUNCEMENT_DURATION"
+VAR_THEME_PRIMARY = "ZOMOROD_THEME_PRIMARY"
+VAR_THEME_SECONDARY = "ZOMOROD_THEME_SECONDARY"
 ZOMOROD_VARIABLE_KEYS = {
     VAR_STORE_NAME,
     VAR_SUPPORT_ID,
@@ -99,7 +101,12 @@ ZOMOROD_VARIABLE_KEYS = {
     VAR_ANNOUNCEMENT_MODE,
     VAR_ANNOUNCEMENT_TIMES,
     VAR_ANNOUNCEMENT_DURATION,
+    VAR_THEME_PRIMARY,
+    VAR_THEME_SECONDARY,
 }
+
+ZOMOROD_PROFILE_VARIABLE_KEYS = ZOMOROD_VARIABLE_KEYS - {VAR_THEME_PRIMARY, VAR_THEME_SECONDARY}
+ZOMOROD_THEME_VARIABLE_KEYS = {VAR_THEME_PRIMARY, VAR_THEME_SECONDARY}
 
 PROFILE_DEFAULTS = {
     "show_configs": True,
@@ -110,6 +117,8 @@ PROFILE_DEFAULTS = {
     "announcement_mode": "always",
     "announcement_times": "",
     "announcement_duration": 60,
+    "theme_primary": "#C9992D",
+    "theme_secondary": "#064C38",
 }
 
 
@@ -132,6 +141,13 @@ class AdminProfileUpdate(BaseModel):
     announcement_mode: Literal["always", "scheduled"] = "always"
     announcement_times: str = Field(default="", max_length=256)
     announcement_duration: int = Field(default=60, ge=1, le=1440)
+    theme_primary: str = Field(default=PROFILE_DEFAULTS["theme_primary"], pattern=r"^#[0-9A-Fa-f]{6}$")
+    theme_secondary: str = Field(default=PROFILE_DEFAULTS["theme_secondary"], pattern=r"^#[0-9A-Fa-f]{6}$")
+
+
+class AppearanceUpdate(BaseModel):
+    theme_primary: str = Field(default=PROFILE_DEFAULTS["theme_primary"], pattern=r"^#[0-9A-Fa-f]{6}$")
+    theme_secondary: str = Field(default=PROFILE_DEFAULTS["theme_secondary"], pattern=r"^#[0-9A-Fa-f]{6}$")
 
 
 class AdminBrandingUpdate(BaseModel):
@@ -329,6 +345,11 @@ def _support_url_from_id(value: str) -> str:
     return ""
 
 
+def _normalize_theme_color(value: object, fallback: str) -> str:
+    text = str(value or "").strip().upper()
+    return text if re.fullmatch(r"#[0-9A-F]{6}", text) else fallback
+
+
 def _profile_from_admin(admin: Admin) -> dict:
     variables = _custom_variable_map(admin)
     try:
@@ -354,6 +375,12 @@ def _profile_from_admin(admin: Admin) -> dict:
         "announcement_mode": "scheduled" if mode == "scheduled" else "always",
         "announcement_times": variables.get(VAR_ANNOUNCEMENT_TIMES, ""),
         "announcement_duration": duration,
+        "theme_primary": _normalize_theme_color(
+            variables.get(VAR_THEME_PRIMARY), PROFILE_DEFAULTS["theme_primary"]
+        ),
+        "theme_secondary": _normalize_theme_color(
+            variables.get(VAR_THEME_SECONDARY), PROFILE_DEFAULTS["theme_secondary"]
+        ),
     }
 
 
@@ -369,6 +396,8 @@ def _profile_variables(model: AdminProfileUpdate, normalized_support_id: str) ->
         VAR_ANNOUNCEMENT_MODE: model.announcement_mode,
         VAR_ANNOUNCEMENT_TIMES: _validate_announcement_times(model.announcement_times),
         VAR_ANNOUNCEMENT_DURATION: str(model.announcement_duration),
+        VAR_THEME_PRIMARY: model.theme_primary.upper(),
+        VAR_THEME_SECONDARY: model.theme_secondary.upper(),
     }
 
 
@@ -450,6 +479,29 @@ async def _save_full_profile(db: AsyncSession, admin: Admin, model: AdminProfile
     await db.refresh(db_admin)
 
 
+async def _save_appearance(db: AsyncSession, admin: Admin, model: AppearanceUpdate) -> None:
+    preserved: list[dict] = []
+    for item in admin.custom_variables or []:
+        if isinstance(item, dict):
+            key = str(item.get("key") or "")
+            value = str(item.get("value") or "")
+        else:
+            key = str(getattr(item, "key", "") or "")
+            value = str(getattr(item, "value", "") or "")
+        if key and key.upper() not in {VAR_THEME_PRIMARY, VAR_THEME_SECONDARY}:
+            preserved.append({"key": key, "value": value})
+
+    preserved.extend(
+        [
+            {"key": VAR_THEME_PRIMARY, "value": model.theme_primary.upper()},
+            {"key": VAR_THEME_SECONDARY, "value": model.theme_secondary.upper()},
+        ]
+    )
+    admin.custom_variables = preserved
+    await db.commit()
+    await db.refresh(admin)
+
+
 async def _save_branding(db: AsyncSession, admin: Admin, model: AdminBrandingUpdate) -> None:
     normalized_support_id, _ = _normalize_support_id(model.support_id)
     variables = _custom_variable_map(admin)
@@ -497,35 +549,60 @@ def _profile_headers(admin: Admin) -> dict[str, str]:
         "x-zomorod-announcement-mode": profile["announcement_mode"],
         "x-zomorod-announcement-times": profile["announcement_times"],
         "x-zomorod-announcement-duration": str(profile["announcement_duration"]),
+        **_theme_headers(admin),
+    }
+
+
+def _theme_headers(admin: Admin) -> dict[str, str]:
+    profile = _profile_from_admin(admin)
+    return {
+        "x-zomorod-theme-primary": profile["theme_primary"],
+        "x-zomorod-theme-secondary": profile["theme_secondary"],
     }
 
 
 def _has_profile_overrides(admin: Admin) -> bool:
     variables = _custom_variable_map(admin)
-    return any(key in variables for key in ZOMOROD_VARIABLE_KEYS)
+    return any(key in variables for key in ZOMOROD_PROFILE_VARIABLE_KEYS)
+
+
+def _has_theme_overrides(admin: Admin) -> bool:
+    variables = _custom_variable_map(admin)
+    return any(key in variables for key in ZOMOROD_THEME_VARIABLE_KEYS)
 
 
 def _overlay_headers(headers: dict, admin: Admin) -> dict:
     result = dict(headers or {})
-    if not _has_profile_overrides(admin):
+    profile_overrides = _has_profile_overrides(admin)
+    theme_overrides = _has_theme_overrides(admin)
+    if not profile_overrides and not theme_overrides:
         return result
-    profile = _profile_from_admin(admin)
-    result.update(_profile_headers(admin))
-    result["profile-title"] = encode_title(profile["store_name"])
-    if profile["support_url"]:
-        result["support-url"] = profile["support_url"]
+    if theme_overrides:
+        result.update(_theme_headers(admin))
+    if profile_overrides:
+        profile = _profile_from_admin(admin)
+        result.update(_profile_headers(admin))
+        result["profile-title"] = encode_title(profile["store_name"])
+        if profile["support_url"]:
+            result["support-url"] = profile["support_url"]
     return result
 
 
 def _overlay_response(response: Response, admin: Admin) -> Response:
-    if not _has_profile_overrides(admin):
+    profile_overrides = _has_profile_overrides(admin)
+    theme_overrides = _has_theme_overrides(admin)
+    if not profile_overrides and not theme_overrides:
         return response
-    profile = _profile_from_admin(admin)
-    for key, value in _profile_headers(admin).items():
-        response.headers[key] = value
-    response.headers["profile-title"] = encode_title(profile["store_name"])
-    if profile["support_url"]:
-        response.headers["support-url"] = profile["support_url"]
+    if theme_overrides:
+        for key, value in _theme_headers(admin).items():
+            response.headers[key] = value
+    if profile_overrides:
+        profile = _profile_from_admin(admin)
+        for key, value in _profile_headers(admin).items():
+            response.headers[key] = value
+        response.headers["profile-title"] = encode_title(profile["store_name"])
+        if profile["support_url"]:
+            response.headers["support-url"] = profile["support_url"]
     return response
 
 
@@ -609,6 +686,17 @@ async def update_my_zomorod_profile(
     db_admin = await _get_db_admin(db, int(current_admin.id))
     await _save_full_profile(db, db_admin, model)
     _upsert_namespace_for_admin(db_admin, model.namespace_slug, model.namespace_enabled)
+    return _profile_payload(db_admin, is_owner=bool(current_admin.role and current_admin.role.is_owner))
+
+
+@router.put("/api/zomorod/appearance")
+async def update_my_zomorod_appearance(
+    model: AppearanceUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_admin: AdminDetails = Depends(_require_admin),
+):
+    db_admin = await _get_db_admin(db, int(current_admin.id))
+    await _save_appearance(db, db_admin, model)
     return _profile_payload(db_admin, is_owner=bool(current_admin.role and current_admin.role.is_owner))
 
 
