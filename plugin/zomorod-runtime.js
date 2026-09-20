@@ -153,10 +153,13 @@
   const applyTheme = (config) => {
     const primary = normalizeHex(config?.themePrimary, DEFAULTS.themePrimary);
     const secondary = normalizeHex(config?.themeSecondary, DEFAULTS.themeSecondary);
+    const primaryChanged = primary !== THEME_DEFAULTS.primary;
+    const secondaryChanged = secondary !== THEME_DEFAULTS.secondary;
     let style = document.getElementById(THEME_STYLE_ID);
 
-    // Default means no override at all, preserving the exact upstream palette.
-    if (primary === THEME_DEFAULTS.primary && secondary === THEME_DEFAULTS.secondary) {
+    // No customization means no CSS override at all, preserving the exact
+    // upstream Zomorod palette byte-for-byte.
+    if (!primaryChanged && !secondaryChanged) {
       style?.remove();
       return;
     }
@@ -167,41 +170,55 @@
       document.head.appendChild(style);
     }
 
-    const darkPrimary = mixHex(primary, '#FFFFFF', 0.18);
-    const darkSecondary = mixHex(secondary, '#FFFFFF', 0.12);
-    const secondaryDeep = mixHex(secondary, '#000000', 0.28);
-    const secondaryBright = mixHex(secondary, '#FFFFFF', 0.12);
-    const primaryBright = mixHex(primary, '#FFFFFF', 0.28);
-    const darkPrimaryBright = mixHex(primary, '#FFFFFF', 0.4);
-    const darkSecondaryBright = mixHex(secondary, '#FFFFFF', 0.24);
+    const light = [];
+    const dark = [];
+
+    if (primaryChanged) {
+      const darkPrimary = mixHex(primary, '#FFFFFF', 0.18);
+      const primaryBright = mixHex(primary, '#FFFFFF', 0.28);
+      const darkPrimaryBright = mixHex(primary, '#FFFFFF', 0.4);
+      light.push(
+        `--primary:${primary}`,
+        `--primary-soft:${rgbaHex(primary,.12)}`,
+        `--primary-foreground:${contrastText(primary)}`,
+        `--ring:${primary}`,
+        `--treasury-gold:${primary}`,
+        `--treasury-gold-bright:${primaryBright}`,
+      );
+      dark.push(
+        `--primary:${darkPrimary}`,
+        `--primary-soft:${rgbaHex(darkPrimary,.14)}`,
+        `--primary-foreground:${contrastText(darkPrimary)}`,
+        `--ring:${darkPrimary}`,
+        `--treasury-gold:${primary}`,
+        `--treasury-gold-bright:${darkPrimaryBright}`,
+      );
+    }
+
+    if (secondaryChanged) {
+      const darkSecondary = mixHex(secondary, '#FFFFFF', 0.12);
+      const secondaryDeep = mixHex(secondary, '#000000', 0.28);
+      const secondaryBright = mixHex(secondary, '#FFFFFF', 0.12);
+      const darkSecondaryBright = mixHex(secondary, '#FFFFFF', 0.24);
+      light.push(
+        `--secondary:${secondary}`,
+        `--secondary-foreground:${contrastText(secondary)}`,
+        `--treasury-emerald:${secondary}`,
+        `--treasury-emerald-deep:${secondaryDeep}`,
+        `--treasury-emerald-bright:${secondaryBright}`,
+      );
+      dark.push(
+        `--secondary:${darkSecondary}`,
+        `--secondary-foreground:${contrastText(darkSecondary)}`,
+        `--treasury-emerald:${secondary}`,
+        `--treasury-emerald-deep:${secondaryDeep}`,
+        `--treasury-emerald-bright:${darkSecondaryBright}`,
+      );
+    }
 
     style.textContent = `
-      .treasury-shell{
-        --primary:${primary};
-        --primary-soft:${rgbaHex(primary,.12)};
-        --primary-foreground:${contrastText(primary)};
-        --secondary:${secondary};
-        --secondary-foreground:${contrastText(secondary)};
-        --ring:${primary};
-        --treasury-gold:${primary};
-        --treasury-gold-bright:${primaryBright};
-        --treasury-emerald:${secondary};
-        --treasury-emerald-deep:${secondaryDeep};
-        --treasury-emerald-bright:${secondaryBright};
-      }
-      .dark .treasury-shell{
-        --primary:${darkPrimary};
-        --primary-soft:${rgbaHex(darkPrimary,.14)};
-        --primary-foreground:${contrastText(darkPrimary)};
-        --secondary:${darkSecondary};
-        --secondary-foreground:${contrastText(darkSecondary)};
-        --ring:${darkPrimary};
-        --treasury-gold:${primary};
-        --treasury-gold-bright:${darkPrimaryBright};
-        --treasury-emerald:${secondary};
-        --treasury-emerald-deep:${secondaryDeep};
-        --treasury-emerald-bright:${darkSecondaryBright};
-      }`;
+      .treasury-shell{${light.join(';')}}
+      .dark .treasury-shell{${dark.join(';')}}`;
   };
 
   const decodeUtf8Base64 = (value) => {
