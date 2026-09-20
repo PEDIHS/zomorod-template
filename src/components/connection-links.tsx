@@ -36,10 +36,21 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
     [parsedLinks]
   );
 
-  // Memoize subscription URL to avoid recalculating on every render
-  const subscriptionUrl = useMemo(() =>
-    `${window.location.origin}${window.location.pathname.replace(/\/info$/, '')}`,
-    []
+  // Memoize subscription URL to avoid recalculating on every render.
+  // Strip both a trailing slash and an accidental /info suffix so format URLs
+  // such as /wireguard never end up with a double slash.
+  const subscriptionUrl = useMemo(() => {
+    const path = window.location.pathname.replace(/\/+$/, '').replace(/\/info$/, '');
+    return `${window.location.origin}${path}`;
+  }, []);
+
+  const hasWireGuard = useMemo(
+    () => parsedLinks.some((link) => link.protocol === 'wireguard'),
+    [parsedLinks]
+  );
+  const wireGuardArchiveUrl = useMemo(
+    () => `${subscriptionUrl}/wireguard`,
+    [subscriptionUrl]
   );
 
   // Memoize all configs text to avoid recalculating on every render
@@ -148,6 +159,23 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
           </button>
         </div>
       </div>
+
+      {hasWireGuard && (
+        <a
+          href={wireGuardArchiveUrl}
+          className="flex min-h-14 w-full items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 text-foreground no-underline shadow-sm transition hover:bg-accent"
+          title={t('configActions.downloadWireGuard')}
+          download
+        >
+          <span className="flex min-w-0 items-center gap-3">
+            <span className="treasury-link-action pointer-events-none shrink-0" aria-hidden="true">
+              <Download className="size-4" />
+            </span>
+            <strong className="truncate text-sm font-semibold">{t('configActions.downloadWireGuard')}</strong>
+          </span>
+          <span className="ios-protocol-badge">ZIP</span>
+        </a>
+      )}
 
       <div className="treasury-config-grid">
         {parsedLinks.map((link, index) => {
