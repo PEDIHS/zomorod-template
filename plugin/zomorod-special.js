@@ -1,11 +1,13 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.7.1';
+  const VERSION = '4.8.0';
   const HEADER_PREFIX = 'x-zomorod-';
   const NAV_ID = 'zomorod-special-nav';
   const ROOT_ID = 'zomorod-special-root';
   const OUTLET_MARK = 'data-zomorod-prev-display';
+  const PANEL_THEME_STYLE_ID = 'zomorod-panel-theme-style';
+  const THEME_DEFAULTS = { primary: '#C9992D', secondary: '#064C38' };
 
   let active = false;
   let cachedSettings = null;
@@ -34,6 +36,8 @@
     announcementMode: 'always',
     announcementTimes: '',
     announcementDuration: 60,
+    themePrimary: THEME_DEFAULTS.primary,
+    themeSecondary: THEME_DEFAULTS.secondary,
   };
 
   const css = `
@@ -112,6 +116,30 @@
     #${ROOT_ID} .z-admin-count{font-size:.63rem;color:hsl(var(--muted-foreground));margin-top:.18rem}
     #${ROOT_ID} .z-admin-status{grid-column:1/-1;font-size:.66rem;color:hsl(var(--muted-foreground))}
     #${ROOT_ID} .z-admin-status.ok{color:#059669}#${ROOT_ID} .z-admin-status.err{color:#dc2626}
+
+    #${ROOT_ID} .z-appearance-card{border-color:color-mix(in srgb,#059669 22%,hsl(var(--border)));background:linear-gradient(145deg,hsl(var(--card)),color-mix(in srgb,hsl(var(--card)) 94%,#059669 6%))}
+    #${ROOT_ID} .z-theme-preview{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.75rem;align-items:center;min-height:78px;margin-bottom:.9rem;border:1px solid hsl(var(--border));border-radius:.85rem;padding:.75rem;background:linear-gradient(135deg,color-mix(in srgb,var(--z-preview-secondary) 12%,hsl(var(--background))),color-mix(in srgb,var(--z-preview-primary) 11%,hsl(var(--background))))}
+    #${ROOT_ID} .z-theme-preview-main{display:flex;align-items:center;gap:.65rem;min-width:0}
+    #${ROOT_ID} .z-theme-preview-logo{width:42px;height:42px;flex:none;border-radius:13px;background:linear-gradient(145deg,var(--z-preview-secondary),color-mix(in srgb,var(--z-preview-secondary) 66%,#000));box-shadow:inset 0 0 0 1px rgba(255,255,255,.16),0 8px 20px color-mix(in srgb,var(--z-preview-secondary) 22%,transparent)}
+    #${ROOT_ID} .z-theme-preview-text strong{display:block;font-size:.78rem}.z-theme-preview-text span{display:block;margin-top:.16rem;color:hsl(var(--muted-foreground));font-size:.64rem}
+    #${ROOT_ID} .z-theme-preview-btn{border:0;border-radius:999px;padding:.5rem .7rem;color:#fff;background:var(--z-preview-primary);font:inherit;font-size:.67rem;font-weight:800;box-shadow:0 5px 14px color-mix(in srgb,var(--z-preview-primary) 24%,transparent)}
+    #${ROOT_ID} .z-color-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem}
+    #${ROOT_ID} .z-color-card{min-width:0;border:1px solid hsl(var(--border));border-radius:.9rem;padding:.7rem;background:hsl(var(--background)/.44)}
+    #${ROOT_ID} .z-color-title{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.55rem;font-size:.74rem;font-weight:800}
+    #${ROOT_ID} .z-color-swatch{width:24px;height:24px;flex:none;border:2px solid rgba(255,255,255,.72);border-radius:50%;box-shadow:0 0 0 1px hsl(var(--border)),0 3px 9px rgba(0,0,0,.12)}
+    #${ROOT_ID} .z-color-plane{position:relative;height:156px;overflow:hidden;border:1px solid hsl(var(--border));border-radius:.72rem;cursor:crosshair;touch-action:none;background:linear-gradient(to top,#000,transparent),linear-gradient(to right,#fff,var(--picker-hue,#f00))}
+    #${ROOT_ID} .z-color-cursor{position:absolute;width:16px;height:16px;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,.65),0 2px 5px rgba(0,0,0,.35);transform:translate(-50%,-50%);pointer-events:none}
+    #${ROOT_ID} .z-color-hue{appearance:none;width:100%;height:14px;margin:.62rem 0 .5rem;border:1px solid hsl(var(--border));border-radius:999px;outline:none;cursor:pointer;background:linear-gradient(90deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)}
+    #${ROOT_ID} .z-color-hue::-webkit-slider-thumb{appearance:none;width:20px;height:20px;border:2px solid #fff;border-radius:50%;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.28),0 2px 6px rgba(0,0,0,.2)}
+    #${ROOT_ID} .z-color-hue::-moz-range-thumb{width:18px;height:18px;border:2px solid #fff;border-radius:50%;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.28)}
+    #${ROOT_ID} .z-color-hex{width:100%!important;text-transform:uppercase;font-family:ui-monospace,SFMono-Regular,Menlo,monospace!important;text-align:center;direction:ltr}
+    #${ROOT_ID} .z-appearance-actions{display:flex;align-items:center;justify-content:space-between;gap:.65rem;flex-wrap:wrap;margin-top:.85rem}
+    #${ROOT_ID} .z-appearance-buttons{display:flex;gap:.45rem;flex-wrap:wrap}
+    #${ROOT_ID} .z-appearance-apply{border:0;border-radius:var(--radius,.5rem);padding:.58rem .78rem;color:#fff;background:linear-gradient(135deg,#047857,#065f46);font:inherit;font-size:.7rem;font-weight:850;cursor:pointer}
+    #${ROOT_ID} .z-appearance-reset{border:1px solid hsl(var(--border));border-radius:var(--radius,.5rem);padding:.56rem .72rem;color:hsl(var(--foreground));background:hsl(var(--background));font:inherit;font-size:.68rem;font-weight:760;cursor:pointer}
+    #${ROOT_ID} .z-appearance-apply:disabled,#${ROOT_ID} .z-appearance-reset:disabled{opacity:.55;cursor:wait}
+    #${ROOT_ID} .z-appearance-status{font-size:.66rem;color:hsl(var(--muted-foreground))}.z-appearance-status.ok{color:#059669}.z-appearance-status.err{color:#dc2626}
+    @media(max-width:760px){#${ROOT_ID} .z-color-grid{grid-template-columns:1fr}#${ROOT_ID} .z-color-plane{height:145px}}
     @media(max-width:900px){#${ROOT_ID} .z-admin-card{grid-template-columns:1fr 1fr}#${ROOT_ID} .z-admin-meta,#${ROOT_ID} .z-admin-card .z-admin-save{grid-column:1/-1}}
     #${ROOT_ID} .z-update-card{border-color:rgba(184,134,11,.26);background:linear-gradient(135deg,rgba(16,185,129,.055),rgba(184,134,11,.075))}
     #${ROOT_ID} .z-update-row{display:flex;align-items:center;justify-content:space-between;gap:.8rem;flex-wrap:wrap}
@@ -136,6 +164,7 @@
     link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg>',
     bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>',
     users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+    palette: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 1 0 0 18h1.4a1.8 1.8 0 0 0 1.1-3.2 1.8 1.8 0 0 1 1.1-3.2H18a3 3 0 0 0 3-3C21 6.85 16.97 3 12 3Z"/><circle cx="7.5" cy="10" r=".8" fill="currentColor" stroke="none"/><circle cx="10" cy="6.8" r=".8" fill="currentColor" stroke="none"/><circle cx="14.2" cy="6.8" r=".8" fill="currentColor" stroke="none"/><circle cx="17" cy="9.8" r=".8" fill="currentColor" stroke="none"/></svg>',
   };
 
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
@@ -163,6 +192,74 @@
   const field = (id) => document.getElementById(id);
   const value = (id) => String(field(id)?.value ?? '').trim();
   const checked = (id) => Boolean(field(id)?.checked);
+
+  const normalizeHex = (input, fallback) => {
+    const value = String(input || '').trim().toUpperCase();
+    return /^#[0-9A-F]{6}$/.test(value) ? value : fallback;
+  };
+  const hexToRgb = (hex) => {
+    const value = normalizeHex(hex, '#000000').slice(1);
+    return { r: parseInt(value.slice(0, 2), 16), g: parseInt(value.slice(2, 4), 16), b: parseInt(value.slice(4, 6), 16) };
+  };
+  const rgbToHex = (r, g, b) => '#' + [r, g, b].map((value) => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, '0')).join('').toUpperCase();
+  const rgbToHsv = ({ r, g, b }) => {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), delta = max - min;
+    let h = 0;
+    if (delta) {
+      if (max === r) h = 60 * (((g - b) / delta) % 6);
+      else if (max === g) h = 60 * (((b - r) / delta) + 2);
+      else h = 60 * (((r - g) / delta) + 4);
+    }
+    if (h < 0) h += 360;
+    return { h, s: max ? (delta / max) * 100 : 0, v: max * 100 };
+  };
+  const hsvToHex = (h, s, v) => {
+    s /= 100; v /= 100;
+    const c = v * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = v - c;
+    let rgb = [0, 0, 0];
+    if (h < 60) rgb = [c, x, 0]; else if (h < 120) rgb = [x, c, 0]; else if (h < 180) rgb = [0, c, x];
+    else if (h < 240) rgb = [0, x, c]; else if (h < 300) rgb = [x, 0, c]; else rgb = [c, 0, x];
+    return rgbToHex(...rgb.map((channel) => (channel + m) * 255));
+  };
+  const mixHex = (hex, target, amount) => {
+    const a = hexToRgb(hex), b = hexToRgb(target), t = Math.max(0, Math.min(1, amount));
+    return rgbToHex(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t);
+  };
+  const rgbaHex = (hex, alpha) => {
+    const { r, g, b } = hexToRgb(hex);
+    return `rgba(${r},${g},${b},${alpha})`;
+  };
+  const contrastText = (hex) => {
+    const { r, g, b } = hexToRgb(hex);
+    const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    return lum > 0.62 ? '#172015' : '#FFFFFF';
+  };
+  const applyPanelTheme = (profile = {}) => {
+    const primary = normalizeHex(profile.theme_primary ?? profile.themePrimary, defaults.themePrimary);
+    const secondary = normalizeHex(profile.theme_secondary ?? profile.themeSecondary, defaults.themeSecondary);
+    let style = document.getElementById(PANEL_THEME_STYLE_ID);
+    if (primary === THEME_DEFAULTS.primary && secondary === THEME_DEFAULTS.secondary) {
+      style?.remove();
+      return;
+    }
+    if (!style) {
+      style = document.createElement('style');
+      style.id = PANEL_THEME_STYLE_ID;
+      document.head.appendChild(style);
+    }
+    const darkPrimary = mixHex(primary, '#FFFFFF', 0.18);
+    const darkSecondary = mixHex(secondary, '#FFFFFF', 0.12);
+    style.textContent = `
+      :root{
+        --primary:${primary};--primary-soft:${rgbaHex(primary,.12)};--primary-foreground:${contrastText(primary)};
+        --secondary:${secondary};--secondary-foreground:${contrastText(secondary)};--ring:${primary};
+      }
+      :root.dark{
+        --primary:${darkPrimary};--primary-soft:${rgbaHex(darkPrimary,.14)};--primary-foreground:${contrastText(darkPrimary)};
+        --secondary:${darkSecondary};--secondary-foreground:${contrastText(darkSecondary)};--ring:${darkPrimary};
+      }`;
+  };
 
   const supportDisplay = (input) => {
     const raw = String(input || '').trim();
@@ -239,6 +336,8 @@
       announcementMode: getHeader(headers, 'announcement-mode') === 'scheduled' ? 'scheduled' : 'always',
       announcementTimes: getHeader(headers, 'announcement-times'),
       announcementDuration: Number(getHeader(headers, 'announcement-duration')) || defaults.announcementDuration,
+      themePrimary: normalizeHex(getHeader(headers, 'theme-primary'), defaults.themePrimary),
+      themeSecondary: normalizeHex(getHeader(headers, 'theme-secondary'), defaults.themeSecondary),
       announce: subscription.announce || '',
       announceUrl: subscription.announce_url || '',
       allowBrowserConfig: subscription.allow_browser_config !== false,
@@ -260,6 +359,8 @@
       announcementMode: scoped.announcementMode,
       announcementTimes: scoped.announcementTimes,
       announcementDuration: scoped.announcementDuration,
+      themePrimary: scoped.themePrimary,
+      themeSecondary: scoped.themeSecondary,
     };
   }
 
@@ -276,6 +377,8 @@
       announcementMode: profile.announcement_mode === 'scheduled' ? 'scheduled' : 'always',
       announcementTimes: profile.announcement_times || '',
       announcementDuration: Number(profile.announcement_duration) || defaults.announcementDuration,
+      themePrimary: normalizeHex(profile.theme_primary, defaults.themePrimary),
+      themeSecondary: normalizeHex(profile.theme_secondary, defaults.themeSecondary),
       announce: '',
       announceUrl: '',
       allowBrowserConfig: true,
@@ -579,6 +682,172 @@
     });
   }
 
+  let themePickerState = {};
+
+  function colorPickerMarkup(key, label, note, color) {
+    const safe = normalizeHex(color, key === 'primary' ? defaults.themePrimary : defaults.themeSecondary);
+    const hsv = rgbToHsv(hexToRgb(safe));
+    return `
+      <div class="z-color-card" data-color-key="${key}">
+        <div class="z-color-title"><span>${escapeHtml(label)}</span><span class="z-color-swatch" data-color-swatch="${key}" style="background:${safe}"></span></div>
+        <div class="z-color-plane" data-color-plane="${key}" style="--picker-hue:hsl(${hsv.h} 100% 50%)">
+          <span class="z-color-cursor" data-color-cursor="${key}" style="left:${hsv.s}%;top:${100 - hsv.v}%"></span>
+        </div>
+        <input class="z-color-hue" data-color-hue="${key}" type="range" min="0" max="360" step="1" value="${Math.round(hsv.h)}" aria-label="Hue ${escapeHtml(label)}">
+        <input class="z-color-hex" data-color-hex="${key}" type="text" dir="ltr" maxlength="7" value="${safe}" aria-label="HEX ${escapeHtml(label)}">
+        <div class="z-help">${escapeHtml(note)}</div>
+      </div>`;
+  }
+
+  function appearanceSection(cfg) {
+    const primary = normalizeHex(cfg.themePrimary, defaults.themePrimary);
+    const secondary = normalizeHex(cfg.themeSecondary, defaults.themeSecondary);
+    return `
+      <section class="z-card z-appearance-card">
+        <div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.palette}</span>ظاهر و رنگ‌بندی</h3><div class="z-card-note">فقط دو رنگ برند و کنترل‌های اصلی تغییر می‌کنند؛ رنگ خطا، موفقیت، هشدار، اطلاعات و پس‌زمینه ثابت می‌مانند.</div></div><span class="z-native">APPEARANCE</span></div>
+        <div id="z-theme-preview" class="z-theme-preview" style="--z-preview-primary:${primary};--z-preview-secondary:${secondary}">
+          <div class="z-theme-preview-main"><span class="z-theme-preview-logo"></span><div class="z-theme-preview-text"><strong>پیش‌نمایش تم</strong><span>رنگ‌ها را با Drag انتخاب کنید و سپس تأیید کنید.</span></div></div>
+          <button class="z-theme-preview-btn" type="button" tabindex="-1">Primary</button>
+        </div>
+        <div class="z-color-grid">
+          ${colorPickerMarkup('primary', 'رنگ اصلی', 'دکمه‌ها، Ring و Accent اصلی رابط', primary)}
+          ${colorPickerMarkup('secondary', 'رنگ مکمل', 'برند، آیکن‌ها و Accent مکمل', secondary)}
+        </div>
+        <div class="z-appearance-actions">
+          <span id="z-appearance-status" class="z-appearance-status">تغییر رنگ تا زمان تأیید فقط در پیش‌نمایش است.</span>
+          <div class="z-appearance-buttons"><button id="z-theme-reset" class="z-appearance-reset" type="button">بازگشت به پیش‌فرض</button><button id="z-theme-apply" class="z-appearance-apply" type="button">تأیید و اعمال رنگ‌ها</button></div>
+        </div>
+      </section>`;
+  }
+
+  function themeFormValues() {
+    const primary = normalizeHex(themePickerState.primary?.hex, '');
+    const secondary = normalizeHex(themePickerState.secondary?.hex, '');
+    if (!primary || !secondary) throw new Error('رنگ باید با فرمت HEX کامل مثل #C9992D باشد');
+    return { primary, secondary };
+  }
+
+  function bindAppearance(root, cfg) {
+    if (!root) return;
+    themePickerState = {};
+    ['primary', 'secondary'].forEach((key) => {
+      const fallback = key === 'primary' ? defaults.themePrimary : defaults.themeSecondary;
+      const initial = normalizeHex(key === 'primary' ? cfg.themePrimary : cfg.themeSecondary, fallback);
+      const hsv = rgbToHsv(hexToRgb(initial));
+      themePickerState[key] = { ...hsv, hex: initial };
+      const plane = root.querySelector(`[data-color-plane="${key}"]`);
+      const cursor = root.querySelector(`[data-color-cursor="${key}"]`);
+      const hue = root.querySelector(`[data-color-hue="${key}"]`);
+      const input = root.querySelector(`[data-color-hex="${key}"]`);
+      const swatch = root.querySelector(`[data-color-swatch="${key}"]`);
+
+      const paint = () => {
+        const state = themePickerState[key];
+        state.hex = hsvToHex(state.h, state.s, state.v);
+        if (plane instanceof HTMLElement) plane.style.setProperty('--picker-hue', `hsl(${state.h} 100% 50%)`);
+        if (cursor instanceof HTMLElement) { cursor.style.left = `${state.s}%`; cursor.style.top = `${100 - state.v}%`; }
+        if (hue instanceof HTMLInputElement) hue.value = String(Math.round(state.h));
+        if (input instanceof HTMLInputElement) input.value = state.hex;
+        if (swatch instanceof HTMLElement) swatch.style.background = state.hex;
+        const preview = root.querySelector('#z-theme-preview');
+        if (preview instanceof HTMLElement) preview.style.setProperty(key === 'primary' ? '--z-preview-primary' : '--z-preview-secondary', state.hex);
+      };
+
+      const syncHex = (hex) => {
+        const normalized = normalizeHex(hex, '');
+        if (!normalized) return false;
+        const next = rgbToHsv(hexToRgb(normalized));
+        themePickerState[key] = { ...next, hex: normalized };
+        paint();
+        return true;
+      };
+
+      const pointerToColor = (event) => {
+        if (!(plane instanceof HTMLElement)) return;
+        const rect = plane.getBoundingClientRect();
+        const x = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+        const y = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
+        themePickerState[key].s = rect.width ? (x / rect.width) * 100 : 0;
+        themePickerState[key].v = rect.height ? 100 - (y / rect.height) * 100 : 0;
+        paint();
+      };
+
+      plane?.addEventListener('pointerdown', (event) => {
+        if (!(plane instanceof HTMLElement)) return;
+        plane.setPointerCapture?.(event.pointerId);
+        pointerToColor(event);
+      });
+      plane?.addEventListener('pointermove', (event) => {
+        if (!(plane instanceof HTMLElement) || !plane.hasPointerCapture?.(event.pointerId)) return;
+        pointerToColor(event);
+      });
+      hue?.addEventListener('input', () => {
+        if (hue instanceof HTMLInputElement) themePickerState[key].h = Number(hue.value) || 0;
+        paint();
+      });
+      input?.addEventListener('change', () => {
+        if (!(input instanceof HTMLInputElement) || syncHex(input.value)) return;
+        input.value = themePickerState[key].hex;
+        const status = root.querySelector('#z-appearance-status');
+        if (status) { status.className = 'z-appearance-status err'; status.textContent = 'HEX نامعتبر است؛ نمونه صحیح: #C9992D'; }
+      });
+      paint();
+    });
+
+    const persist = async (reset = false) => {
+      const applyButton = root.querySelector('#z-theme-apply');
+      const resetButton = root.querySelector('#z-theme-reset');
+      const status = root.querySelector('#z-appearance-status');
+      if (applyButton instanceof HTMLButtonElement) applyButton.disabled = true;
+      if (resetButton instanceof HTMLButtonElement) resetButton.disabled = true;
+      try {
+        if (reset) {
+          const p = rgbToHsv(hexToRgb(THEME_DEFAULTS.primary));
+          const s = rgbToHsv(hexToRgb(THEME_DEFAULTS.secondary));
+          themePickerState.primary = { ...p, hex: THEME_DEFAULTS.primary };
+          themePickerState.secondary = { ...s, hex: THEME_DEFAULTS.secondary };
+          root.querySelectorAll('[data-color-hex]').forEach((node) => {
+            const key = node.getAttribute('data-color-hex');
+            if (node instanceof HTMLInputElement && key && themePickerState[key]) node.value = themePickerState[key].hex;
+          });
+          // Re-bind once to repaint both drag surfaces/cursors from the defaults.
+          bindAppearance(root, { ...cfg, themePrimary: THEME_DEFAULTS.primary, themeSecondary: THEME_DEFAULTS.secondary });
+          return persistAppearance(root, THEME_DEFAULTS.primary, THEME_DEFAULTS.secondary, true);
+        }
+        const theme = themeFormValues();
+        return persistAppearance(root, theme.primary, theme.secondary, false);
+      } finally {
+        const nextApply = root.querySelector('#z-theme-apply');
+        const nextReset = root.querySelector('#z-theme-reset');
+        if (nextApply instanceof HTMLButtonElement) nextApply.disabled = false;
+        if (nextReset instanceof HTMLButtonElement) nextReset.disabled = false;
+      }
+    };
+
+    root.querySelector('#z-theme-apply')?.addEventListener('click', () => persist(false));
+    root.querySelector('#z-theme-reset')?.addEventListener('click', () => {
+      if (window.confirm('رنگ‌های زمرد به حالت پیش‌فرض برگردند؟')) persist(true);
+    });
+  }
+
+  async function persistAppearance(root, primary, secondary, reset = false) {
+    const status = root?.querySelector('#z-appearance-status');
+    if (status) { status.className = 'z-appearance-status'; status.textContent = reset ? 'در حال بازگردانی رنگ‌های پیش‌فرض…' : 'در حال ذخیره و اعمال رنگ‌ها…'; }
+    try {
+      const updated = await api('/api/zomorod/appearance', {
+        method: 'PUT',
+        body: JSON.stringify({ theme_primary: primary, theme_secondary: secondary }),
+      });
+      cachedProfile = updated;
+      applyPanelTheme(updated?.profile || { theme_primary: primary, theme_secondary: secondary });
+      if (status) { status.className = 'z-appearance-status ok'; status.textContent = reset ? 'رنگ‌های پیش‌فرض بازگردانده شدند ✓' : 'رنگ‌ها ذخیره و روی پنل اعمال شدند ✓'; }
+      return updated;
+    } catch (error) {
+      if (status) { status.className = 'z-appearance-status err'; status.textContent = `خطا: ${error?.name === 'AbortError' ? 'timeout' : (error?.message || error)}`; }
+      throw error;
+    }
+  }
+
   function renderForm(cfg, profilePayload = null) {
     const username = currentAdmin?.username || '';
     const apps = isOwner
@@ -602,6 +871,7 @@
         ${updateSection()}
         ${adminProfilesSection()}
         ${ownPathSection(profilePayload)}
+        ${appearanceSection(cfg)}
         <section class="z-card"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.sliders}</span>تنظیمات فروشگاه</h3><div class="z-card-note">نام فروشگاه و پشتیبانی ${isOwner ? 'برای تنظیمات اصلی' : 'فقط برای کاربران همین نمایندگی'} استفاده می‌شوند.</div></div></div><div class="z-grid">
           <div class="z-field"><label for="z-store">نام فروشگاه</label><input id="z-store" type="text" maxlength="80" value="${escapeHtml(cfg.storeName)}"></div>
           <div class="z-field"><label for="z-support">آیدی پشتیبانی</label><input id="z-support" type="text" dir="ltr" maxlength="256" placeholder="@support" value="${escapeHtml(cfg.supportId)}"><div class="z-help">@username، username یا لینک t.me / https / tg قابل استفاده است.</div></div>
@@ -629,6 +899,7 @@
     bindUpdateActions(root);
     bindOwnPath(root);
     bindAdminProfileActions(root);
+    bindAppearance(root, cfg);
   }
 
   function renderOwner(settings, profilePayload = cachedProfile) {
@@ -674,6 +945,8 @@
         announcement_mode: value('z-ann-mode') || 'always',
         announcement_times: times,
         announcement_duration: Math.max(1, Math.min(1440, Number(value('z-ann-duration')) || 60)),
+        theme_primary: themeFormValues().primary,
+        theme_secondary: themeFormValues().secondary,
       };
 
       settings.subscription ||= {};
@@ -696,6 +969,7 @@
       ]);
       cachedSettings = updatedSettings;
       cachedProfile = updatedProfile;
+      applyPanelTheme(updatedProfile?.profile);
       await loadAdminProfiles();
       statusNode.className = 'z-status ok';
       statusNode.textContent = 'تنظیمات اختصاصی Owner ذخیره شد ✓';
@@ -732,8 +1006,11 @@
         announcement_mode: value('z-ann-mode') || 'always',
         announcement_times: times,
         announcement_duration: Math.max(1, Math.min(1440, Number(value('z-ann-duration')) || 60)),
+        theme_primary: themeFormValues().primary,
+        theme_secondary: themeFormValues().secondary,
       };
       cachedProfile = await api('/api/zomorod/profile', { method: 'PUT', body: JSON.stringify(payload) });
+      applyPanelTheme(cachedProfile?.profile);
       statusNode.className = 'z-status ok';
       statusNode.textContent = 'تنظیمات نمایندگی ذخیره شد ✓';
     } catch (error) {
@@ -864,6 +1141,12 @@
       currentAdmin = await api('/api/admin');
       accessAllowed = Boolean(currentAdmin?.id || currentAdmin?.username);
       isOwner = currentAdmin?.role?.is_owner === true || currentAdmin?.is_owner === true;
+      try {
+        cachedProfile = await api('/api/zomorod/profile');
+        applyPanelTheme(cachedProfile?.profile);
+      } catch (_) {
+        applyPanelTheme({});
+      }
       if (isOwner) void loadUpdateStatus(); else removeUpdateNotice();
     } catch (_) {
       currentAdmin = null;
