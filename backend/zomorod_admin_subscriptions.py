@@ -105,6 +105,9 @@ ZOMOROD_VARIABLE_KEYS = {
     VAR_THEME_SECONDARY,
 }
 
+ZOMOROD_PROFILE_VARIABLE_KEYS = ZOMOROD_VARIABLE_KEYS - {VAR_THEME_PRIMARY, VAR_THEME_SECONDARY}
+ZOMOROD_THEME_VARIABLE_KEYS = {VAR_THEME_PRIMARY, VAR_THEME_SECONDARY}
+
 PROFILE_DEFAULTS = {
     "show_configs": True,
     "show_wireguard": False,
@@ -546,6 +549,13 @@ def _profile_headers(admin: Admin) -> dict[str, str]:
         "x-zomorod-announcement-mode": profile["announcement_mode"],
         "x-zomorod-announcement-times": profile["announcement_times"],
         "x-zomorod-announcement-duration": str(profile["announcement_duration"]),
+        **_theme_headers(admin),
+    }
+
+
+def _theme_headers(admin: Admin) -> dict[str, str]:
+    profile = _profile_from_admin(admin)
+    return {
         "x-zomorod-theme-primary": profile["theme_primary"],
         "x-zomorod-theme-secondary": profile["theme_secondary"],
     }
@@ -553,30 +563,46 @@ def _profile_headers(admin: Admin) -> dict[str, str]:
 
 def _has_profile_overrides(admin: Admin) -> bool:
     variables = _custom_variable_map(admin)
-    return any(key in variables for key in ZOMOROD_VARIABLE_KEYS)
+    return any(key in variables for key in ZOMOROD_PROFILE_VARIABLE_KEYS)
+
+
+def _has_theme_overrides(admin: Admin) -> bool:
+    variables = _custom_variable_map(admin)
+    return any(key in variables for key in ZOMOROD_THEME_VARIABLE_KEYS)
 
 
 def _overlay_headers(headers: dict, admin: Admin) -> dict:
     result = dict(headers or {})
-    if not _has_profile_overrides(admin):
+    profile_overrides = _has_profile_overrides(admin)
+    theme_overrides = _has_theme_overrides(admin)
+    if not profile_overrides and not theme_overrides:
         return result
-    profile = _profile_from_admin(admin)
-    result.update(_profile_headers(admin))
-    result["profile-title"] = encode_title(profile["store_name"])
-    if profile["support_url"]:
-        result["support-url"] = profile["support_url"]
+    if theme_overrides:
+        result.update(_theme_headers(admin))
+    if profile_overrides:
+        profile = _profile_from_admin(admin)
+        result.update(_profile_headers(admin))
+        result["profile-title"] = encode_title(profile["store_name"])
+        if profile["support_url"]:
+            result["support-url"] = profile["support_url"]
     return result
 
 
 def _overlay_response(response: Response, admin: Admin) -> Response:
-    if not _has_profile_overrides(admin):
+    profile_overrides = _has_profile_overrides(admin)
+    theme_overrides = _has_theme_overrides(admin)
+    if not profile_overrides and not theme_overrides:
         return response
-    profile = _profile_from_admin(admin)
-    for key, value in _profile_headers(admin).items():
-        response.headers[key] = value
-    response.headers["profile-title"] = encode_title(profile["store_name"])
-    if profile["support_url"]:
-        response.headers["support-url"] = profile["support_url"]
+    if theme_overrides:
+        for key, value in _theme_headers(admin).items():
+            response.headers[key] = value
+    if profile_overrides:
+        profile = _profile_from_admin(admin)
+        for key, value in _profile_headers(admin).items():
+            response.headers[key] = value
+        response.headers["profile-title"] = encode_title(profile["store_name"])
+        if profile["support_url"]:
+            response.headers["support-url"] = profile["support_url"]
     return response
 
 
