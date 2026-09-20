@@ -214,6 +214,7 @@
     return { h, s: max ? (delta / max) * 100 : 0, v: max * 100 };
   };
   const hsvToHex = (h, s, v) => {
+    h = ((Number(h) % 360) + 360) % 360;
     s /= 100; v /= 100;
     const c = v * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = v - c;
     let rgb = [0, 0, 0];
