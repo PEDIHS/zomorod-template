@@ -92,17 +92,25 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
   const handleDownloadWireGuard = useCallback((link: ParsedLink) => {
     try {
       const payload = getWireGuardDownloadPayload(link.raw);
-      if (!payload) {
-        throw new Error('WireGuard config not available');
+      if (payload) {
+        downloadTextFile(payload.content, payload.fileName);
+      } else {
+        // Keep the file action visible for every WireGuard link. If a future
+        // PasarGuard URI contains fields this client cannot convert locally,
+        // fall back to PasarGuard's canonical WireGuard ZIP endpoint.
+        const anchor = document.createElement('a');
+        anchor.href = wireGuardArchiveUrl;
+        anchor.download = 'wireguard.zip';
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
       }
-
-      downloadTextFile(payload.content, payload.fileName);
       toast.success(t('configActions.downloadStarted'));
     } catch (error) {
       console.error('Failed to download WireGuard config:', error);
       toast.error(t('configActions.downloadFailed'));
     }
-  }, [t]);
+  }, [t, wireGuardArchiveUrl]);
 
   const getProtocolBadge = useCallback((protocol: ParsedLink['protocol']) => {
     if (protocol === 'unknown') return 'SUB';
@@ -199,7 +207,7 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
                 <b dir="ltr">{serverPings[index]} ms</b>
               </div>
               <div className="treasury-link-actions">
-                {getWireGuardDownloadPayload(link.raw) && (
+                {link.protocol === 'wireguard' && (
                   <button type="button" onClick={() => handleDownloadWireGuard(link)} className="treasury-link-action" title={t('configActions.downloadWireGuard')}>
                     <Download className="size-4" />
                   </button>
