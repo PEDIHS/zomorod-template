@@ -3,6 +3,8 @@
 
   const PREFIX = 'x-zomorod-';
   const SUPPORT_ID = 'zomorod-support-link';
+  const THEME_STYLE_ID = 'zomorod-theme-style';
+  const THEME_DEFAULTS = { primary: '#C9992D', secondary: '#064C38' };
   const DEFAULTS = {
     storeName: 'زمرد',
     supportId: '',
@@ -14,6 +16,8 @@
     announcementMode: 'always',
     announcementTimes: '',
     announcementDuration: 60,
+    themePrimary: THEME_DEFAULTS.primary,
+    themeSecondary: THEME_DEFAULTS.secondary,
   };
 
   const state = {
@@ -121,6 +125,85 @@
 
   const header = (headers, name) => headers[`${PREFIX}${name}`] ?? '';
 
+  const normalizeHex = (input, fallback) => {
+    const value = String(input || '').trim().toUpperCase();
+    return /^#[0-9A-F]{6}$/.test(value) ? value : fallback;
+  };
+  const hexToRgb = (hex) => {
+    const value = normalizeHex(hex, '#000000').slice(1);
+    return { r: parseInt(value.slice(0, 2), 16), g: parseInt(value.slice(2, 4), 16), b: parseInt(value.slice(4, 6), 16) };
+  };
+  const rgbToHex = (r, g, b) => '#' + [r, g, b]
+    .map((value) => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, '0'))
+    .join('').toUpperCase();
+  const mixHex = (hex, target, amount) => {
+    const a = hexToRgb(hex), b = hexToRgb(target), t = Math.max(0, Math.min(1, amount));
+    return rgbToHex(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t);
+  };
+  const rgbaHex = (hex, alpha) => {
+    const { r, g, b } = hexToRgb(hex);
+    return `rgba(${r},${g},${b},${alpha})`;
+  };
+  const contrastText = (hex) => {
+    const { r, g, b } = hexToRgb(hex);
+    const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    return lum > 0.62 ? '#172015' : '#FFFFFF';
+  };
+
+  const applyTheme = (config) => {
+    const primary = normalizeHex(config?.themePrimary, DEFAULTS.themePrimary);
+    const secondary = normalizeHex(config?.themeSecondary, DEFAULTS.themeSecondary);
+    let style = document.getElementById(THEME_STYLE_ID);
+
+    // Default means no override at all, preserving the exact upstream palette.
+    if (primary === THEME_DEFAULTS.primary && secondary === THEME_DEFAULTS.secondary) {
+      style?.remove();
+      return;
+    }
+
+    if (!style) {
+      style = document.createElement('style');
+      style.id = THEME_STYLE_ID;
+      document.head.appendChild(style);
+    }
+
+    const darkPrimary = mixHex(primary, '#FFFFFF', 0.18);
+    const darkSecondary = mixHex(secondary, '#FFFFFF', 0.12);
+    const secondaryDeep = mixHex(secondary, '#000000', 0.28);
+    const secondaryBright = mixHex(secondary, '#FFFFFF', 0.12);
+    const primaryBright = mixHex(primary, '#FFFFFF', 0.28);
+    const darkPrimaryBright = mixHex(primary, '#FFFFFF', 0.4);
+    const darkSecondaryBright = mixHex(secondary, '#FFFFFF', 0.24);
+
+    style.textContent = `
+      .treasury-shell{
+        --primary:${primary};
+        --primary-soft:${rgbaHex(primary,.12)};
+        --primary-foreground:${contrastText(primary)};
+        --secondary:${secondary};
+        --secondary-foreground:${contrastText(secondary)};
+        --ring:${primary};
+        --treasury-gold:${primary};
+        --treasury-gold-bright:${primaryBright};
+        --treasury-emerald:${secondary};
+        --treasury-emerald-deep:${secondaryDeep};
+        --treasury-emerald-bright:${secondaryBright};
+      }
+      .dark .treasury-shell{
+        --primary:${darkPrimary};
+        --primary-soft:${rgbaHex(darkPrimary,.14)};
+        --primary-foreground:${contrastText(darkPrimary)};
+        --secondary:${darkSecondary};
+        --secondary-foreground:${contrastText(darkSecondary)};
+        --ring:${darkPrimary};
+        --treasury-gold:${primary};
+        --treasury-gold-bright:${darkPrimaryBright};
+        --treasury-emerald:${secondary};
+        --treasury-emerald-deep:${secondaryDeep};
+        --treasury-emerald-bright:${darkSecondaryBright};
+      }`;
+  };
+
   const decodeUtf8Base64 = (value) => {
     if (!value) return '';
     try {
@@ -167,6 +250,8 @@
       announcementMode: header(headers, 'announcement-mode') === 'scheduled' ? 'scheduled' : 'always',
       announcementTimes: header(headers, 'announcement-times'),
       announcementDuration: Math.max(1, Math.min(1440, Number(header(headers, 'announcement-duration')) || DEFAULTS.announcementDuration)),
+      themePrimary: normalizeHex(header(headers, 'theme-primary'), DEFAULTS.themePrimary),
+      themeSecondary: normalizeHex(header(headers, 'theme-secondary'), DEFAULTS.themeSecondary),
     };
   };
 
@@ -323,6 +408,7 @@
     });
     document.querySelectorAll('.zomorod-special-announcement').forEach((node) => node.classList.remove('zomorod-special-announcement'));
     document.getElementById(SUPPORT_ID)?.remove();
+    document.getElementById(THEME_STYLE_ID)?.remove();
     document.documentElement.removeAttribute('data-zomorod');
   };
 
@@ -331,6 +417,7 @@
     if (!state.loaded) return;
 
     const config = state.config;
+    applyTheme(config);
     updateBrand(config.storeName);
     applySupport(config.supportId);
     applyConnections(config);
