@@ -121,7 +121,7 @@
     #${ROOT_ID} .z-theme-preview{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.75rem;align-items:center;min-height:78px;margin-bottom:.9rem;border:1px solid hsl(var(--border));border-radius:.85rem;padding:.75rem;background:linear-gradient(135deg,color-mix(in srgb,var(--z-preview-secondary) 12%,hsl(var(--background))),color-mix(in srgb,var(--z-preview-primary) 11%,hsl(var(--background))))}
     #${ROOT_ID} .z-theme-preview-main{display:flex;align-items:center;gap:.65rem;min-width:0}
     #${ROOT_ID} .z-theme-preview-logo{width:42px;height:42px;flex:none;border-radius:13px;background:linear-gradient(145deg,var(--z-preview-secondary),color-mix(in srgb,var(--z-preview-secondary) 66%,#000));box-shadow:inset 0 0 0 1px rgba(255,255,255,.16),0 8px 20px color-mix(in srgb,var(--z-preview-secondary) 22%,transparent)}
-    #${ROOT_ID} .z-theme-preview-text strong{display:block;font-size:.78rem}.z-theme-preview-text span{display:block;margin-top:.16rem;color:hsl(var(--muted-foreground));font-size:.64rem}
+    #${ROOT_ID} .z-theme-preview-text strong{display:block;font-size:.78rem}#${ROOT_ID} .z-theme-preview-text span{display:block;margin-top:.16rem;color:hsl(var(--muted-foreground));font-size:.64rem}
     #${ROOT_ID} .z-theme-preview-btn{border:0;border-radius:999px;padding:.5rem .7rem;color:#fff;background:var(--z-preview-primary);font:inherit;font-size:.67rem;font-weight:800;box-shadow:0 5px 14px color-mix(in srgb,var(--z-preview-primary) 24%,transparent)}
     #${ROOT_ID} .z-color-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem}
     #${ROOT_ID} .z-color-card{min-width:0;border:1px solid hsl(var(--border));border-radius:.9rem;padding:.7rem;background:hsl(var(--background)/.44)}
@@ -138,7 +138,7 @@
     #${ROOT_ID} .z-appearance-apply{border:0;border-radius:var(--radius,.5rem);padding:.58rem .78rem;color:#fff;background:linear-gradient(135deg,#047857,#065f46);font:inherit;font-size:.7rem;font-weight:850;cursor:pointer}
     #${ROOT_ID} .z-appearance-reset{border:1px solid hsl(var(--border));border-radius:var(--radius,.5rem);padding:.56rem .72rem;color:hsl(var(--foreground));background:hsl(var(--background));font:inherit;font-size:.68rem;font-weight:760;cursor:pointer}
     #${ROOT_ID} .z-appearance-apply:disabled,#${ROOT_ID} .z-appearance-reset:disabled{opacity:.55;cursor:wait}
-    #${ROOT_ID} .z-appearance-status{font-size:.66rem;color:hsl(var(--muted-foreground))}.z-appearance-status.ok{color:#059669}.z-appearance-status.err{color:#dc2626}
+    #${ROOT_ID} .z-appearance-status{font-size:.66rem;color:hsl(var(--muted-foreground))}#${ROOT_ID} .z-appearance-status.ok{color:#059669}#${ROOT_ID} .z-appearance-status.err{color:#dc2626}
     @media(max-width:760px){#${ROOT_ID} .z-color-grid{grid-template-columns:1fr}#${ROOT_ID} .z-color-plane{height:145px}}
     @media(max-width:900px){#${ROOT_ID} .z-admin-card{grid-template-columns:1fr 1fr}#${ROOT_ID} .z-admin-meta,#${ROOT_ID} .z-admin-card .z-admin-save{grid-column:1/-1}}
     #${ROOT_ID} .z-update-card{border-color:rgba(184,134,11,.26);background:linear-gradient(135deg,rgba(16,185,129,.055),rgba(184,134,11,.075))}
@@ -727,6 +727,24 @@
     return { primary, secondary };
   }
 
+  function paintThemePicker(root, key) {
+    const state = themePickerState[key];
+    if (!root || !state) return;
+    state.hex = hsvToHex(state.h, state.s, state.v);
+    const plane = root.querySelector(`[data-color-plane="${key}"]`);
+    const cursor = root.querySelector(`[data-color-cursor="${key}"]`);
+    const hue = root.querySelector(`[data-color-hue="${key}"]`);
+    const input = root.querySelector(`[data-color-hex="${key}"]`);
+    const swatch = root.querySelector(`[data-color-swatch="${key}"]`);
+    if (plane instanceof HTMLElement) plane.style.setProperty('--picker-hue', `hsl(${state.h} 100% 50%)`);
+    if (cursor instanceof HTMLElement) { cursor.style.left = `${state.s}%`; cursor.style.top = `${100 - state.v}%`; }
+    if (hue instanceof HTMLInputElement) hue.value = String(Math.round(state.h));
+    if (input instanceof HTMLInputElement) input.value = state.hex;
+    if (swatch instanceof HTMLElement) swatch.style.background = state.hex;
+    const preview = root.querySelector('#z-theme-preview');
+    if (preview instanceof HTMLElement) preview.style.setProperty(key === 'primary' ? '--z-preview-primary' : '--z-preview-secondary', state.hex);
+  }
+
   function bindAppearance(root, cfg) {
     if (!root) return;
     themePickerState = {};
@@ -741,17 +759,7 @@
       const input = root.querySelector(`[data-color-hex="${key}"]`);
       const swatch = root.querySelector(`[data-color-swatch="${key}"]`);
 
-      const paint = () => {
-        const state = themePickerState[key];
-        state.hex = hsvToHex(state.h, state.s, state.v);
-        if (plane instanceof HTMLElement) plane.style.setProperty('--picker-hue', `hsl(${state.h} 100% 50%)`);
-        if (cursor instanceof HTMLElement) { cursor.style.left = `${state.s}%`; cursor.style.top = `${100 - state.v}%`; }
-        if (hue instanceof HTMLInputElement) hue.value = String(Math.round(state.h));
-        if (input instanceof HTMLInputElement) input.value = state.hex;
-        if (swatch instanceof HTMLElement) swatch.style.background = state.hex;
-        const preview = root.querySelector('#z-theme-preview');
-        if (preview instanceof HTMLElement) preview.style.setProperty(key === 'primary' ? '--z-preview-primary' : '--z-preview-secondary', state.hex);
-      };
+      const paint = () => paintThemePicker(root, key);
 
       const syncHex = (hex) => {
         const normalized = normalizeHex(hex, '');
@@ -806,12 +814,8 @@
           const s = rgbToHsv(hexToRgb(THEME_DEFAULTS.secondary));
           themePickerState.primary = { ...p, hex: THEME_DEFAULTS.primary };
           themePickerState.secondary = { ...s, hex: THEME_DEFAULTS.secondary };
-          root.querySelectorAll('[data-color-hex]').forEach((node) => {
-            const key = node.getAttribute('data-color-hex');
-            if (node instanceof HTMLInputElement && key && themePickerState[key]) node.value = themePickerState[key].hex;
-          });
-          // Re-bind once to repaint both drag surfaces/cursors from the defaults.
-          bindAppearance(root, { ...cfg, themePrimary: THEME_DEFAULTS.primary, themeSecondary: THEME_DEFAULTS.secondary });
+          paintThemePicker(root, 'primary');
+          paintThemePicker(root, 'secondary');
           return persistAppearance(root, THEME_DEFAULTS.primary, THEME_DEFAULTS.secondary, true);
         }
         const theme = themeFormValues();
