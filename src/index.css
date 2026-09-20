@@ -975,7 +975,7 @@
 
   .treasury-hero-copy > p {
     margin-top: 0.55rem;
-    color: rgba(238, 247, 242, 0.7);
+    color: color-mix(in srgb, var(--treasury-emerald-foreground) 70%, transparent);
     font-size: 0.82rem;
     line-height: 1.55;
   }
@@ -1067,7 +1067,7 @@
   }
 
   .treasury-orbit-center small { margin-inline-start: 0.12rem; font-size: 0.42em; }
-  .treasury-orbit-center span { margin-top: 0.35rem; color: rgba(241, 248, 244, 0.68); font-size: 0.72rem; }
+  .treasury-orbit-center span { margin-top: 0.35rem; color: color-mix(in srgb, var(--treasury-emerald-foreground) 68%, transparent); font-size: 0.72rem; }
 
   .treasury-expiry {
     display: flex;
@@ -1402,7 +1402,7 @@
   .treasury-shell .ios-compact-button { color: var(--treasury-gold-foreground); background: linear-gradient(135deg, var(--treasury-gold-bright), var(--treasury-gold)); box-shadow: 0 8px 20px color-mix(in srgb, var(--treasury-gold) 18%, transparent); }
   .treasury-shell .ios-list-row { min-height: 64px; padding: 0.65rem 0.7rem; }
   .treasury-shell .ios-list-row-featured { background: linear-gradient(90deg, var(--primary-soft), transparent); }
-  .treasury-shell .ios-protocol-badge { min-width: 54px; border-radius: 999px; color: #effbf5; background: linear-gradient(135deg, var(--treasury-emerald-bright), var(--treasury-emerald)); }
+  .treasury-shell .ios-protocol-badge { min-width: 54px; border-radius: 999px; color: var(--treasury-emerald-foreground); background: linear-gradient(135deg, var(--treasury-emerald-bright), var(--treasury-emerald)); }
   .treasury-shell .ios-row-action { border: 0.5px solid var(--border); color: var(--treasury-emerald); background: var(--material-strong); }
   .dark .treasury-shell .ios-row-action { color: var(--treasury-gold-bright); }
   .treasury-shell .ios-segmented-control { border-radius: 999px; padding: 4px; }
@@ -1599,7 +1599,7 @@
   .treasury-server-ping b { font-size: 0.65rem; font-weight: 760; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .treasury-config-copy { min-width: 0; }
   .treasury-config-copy > div { display: flex; align-items: center; gap: 0.35rem; }
-  .treasury-config-protocol { display: inline-flex; min-height: 20px; align-items: center; border-radius: 999px; padding-inline: 0.45rem; color: #effbf5; background: linear-gradient(135deg, var(--treasury-emerald-bright), var(--treasury-emerald)); font-size: 0.53rem; font-weight: 780; text-transform: uppercase; }
+  .treasury-config-protocol { display: inline-flex; min-height: 20px; align-items: center; border-radius: 999px; padding-inline: 0.45rem; color: var(--treasury-emerald-foreground); background: linear-gradient(135deg, var(--treasury-emerald-bright), var(--treasury-emerald)); font-size: 0.53rem; font-weight: 780; text-transform: uppercase; }
   .treasury-config-emoji { font-size: 0.76rem; }
   .treasury-config-copy strong { display: block; overflow: hidden; margin-top: 0.28rem; color: var(--foreground); font-size: 0.82rem; font-weight: 720; text-overflow: ellipsis; white-space: nowrap; }
   .treasury-config-copy small { display: block; margin-top: 0.1rem; color: var(--muted-foreground); font-size: 0.6rem; }
