@@ -6,7 +6,6 @@
   const NAV_ID = 'zomorod-special-nav';
   const ROOT_ID = 'zomorod-special-root';
   const OUTLET_MARK = 'data-zomorod-prev-display';
-  const PANEL_THEME_STYLE_ID = 'zomorod-panel-theme-style';
   const THEME_DEFAULTS = { primary: '#C9992D', secondary: '#064C38' };
 
   let active = false;
@@ -222,45 +221,6 @@
     else if (h < 240) rgb = [0, x, c]; else if (h < 300) rgb = [x, 0, c]; else rgb = [c, 0, x];
     return rgbToHex(...rgb.map((channel) => (channel + m) * 255));
   };
-  const mixHex = (hex, target, amount) => {
-    const a = hexToRgb(hex), b = hexToRgb(target), t = Math.max(0, Math.min(1, amount));
-    return rgbToHex(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t);
-  };
-  const rgbaHex = (hex, alpha) => {
-    const { r, g, b } = hexToRgb(hex);
-    return `rgba(${r},${g},${b},${alpha})`;
-  };
-  const contrastText = (hex) => {
-    const { r, g, b } = hexToRgb(hex);
-    const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-    return lum > 0.62 ? '#172015' : '#FFFFFF';
-  };
-  const applyPanelTheme = (profile = {}) => {
-    const primary = normalizeHex(profile.theme_primary ?? profile.themePrimary, defaults.themePrimary);
-    const secondary = normalizeHex(profile.theme_secondary ?? profile.themeSecondary, defaults.themeSecondary);
-    let style = document.getElementById(PANEL_THEME_STYLE_ID);
-    if (primary === THEME_DEFAULTS.primary && secondary === THEME_DEFAULTS.secondary) {
-      style?.remove();
-      return;
-    }
-    if (!style) {
-      style = document.createElement('style');
-      style.id = PANEL_THEME_STYLE_ID;
-      document.head.appendChild(style);
-    }
-    const darkPrimary = mixHex(primary, '#FFFFFF', 0.18);
-    const darkSecondary = mixHex(secondary, '#FFFFFF', 0.12);
-    style.textContent = `
-      :root{
-        --primary:${primary};--primary-soft:${rgbaHex(primary,.12)};--primary-foreground:${contrastText(primary)};
-        --secondary:${secondary};--secondary-foreground:${contrastText(secondary)};--ring:${primary};
-      }
-      :root.dark{
-        --primary:${darkPrimary};--primary-soft:${rgbaHex(darkPrimary,.14)};--primary-foreground:${contrastText(darkPrimary)};
-        --secondary:${darkSecondary};--secondary-foreground:${contrastText(darkSecondary)};--ring:${darkPrimary};
-      }`;
-  };
-
   const supportDisplay = (input) => {
     const raw = String(input || '').trim();
     if (!raw) return '';
@@ -843,8 +803,7 @@
         body: JSON.stringify({ theme_primary: primary, theme_secondary: secondary }),
       });
       cachedProfile = updated;
-      applyPanelTheme(updated?.profile || { theme_primary: primary, theme_secondary: secondary });
-      if (status) { status.className = 'z-appearance-status ok'; status.textContent = reset ? 'رنگ‌های پیش‌فرض بازگردانده شدند ✓' : 'رنگ‌ها ذخیره و روی پنل اعمال شدند ✓'; }
+      if (status) { status.className = 'z-appearance-status ok'; status.textContent = reset ? 'رنگ‌های پیش‌فرض بازگردانده شدند ✓' : 'رنگ‌ها ذخیره و روی تمپلیت کاربران اعمال شدند ✓'; }
       return updated;
     } catch (error) {
       if (status) { status.className = 'z-appearance-status err'; status.textContent = `خطا: ${error?.name === 'AbortError' ? 'timeout' : (error?.message || error)}`; }
@@ -973,7 +932,6 @@
       ]);
       cachedSettings = updatedSettings;
       cachedProfile = updatedProfile;
-      applyPanelTheme(updatedProfile?.profile);
       await loadAdminProfiles();
       statusNode.className = 'z-status ok';
       statusNode.textContent = 'تنظیمات اختصاصی Owner ذخیره شد ✓';
@@ -1014,7 +972,6 @@
         theme_secondary: themeFormValues().secondary,
       };
       cachedProfile = await api('/api/zomorod/profile', { method: 'PUT', body: JSON.stringify(payload) });
-      applyPanelTheme(cachedProfile?.profile);
       statusNode.className = 'z-status ok';
       statusNode.textContent = 'تنظیمات نمایندگی ذخیره شد ✓';
     } catch (error) {
@@ -1145,12 +1102,6 @@
       currentAdmin = await api('/api/admin');
       accessAllowed = Boolean(currentAdmin?.id || currentAdmin?.username);
       isOwner = currentAdmin?.role?.is_owner === true || currentAdmin?.is_owner === true;
-      try {
-        cachedProfile = await api('/api/zomorod/profile');
-        applyPanelTheme(cachedProfile?.profile);
-      } catch (_) {
-        applyPanelTheme({});
-      }
       if (isOwner) void loadUpdateStatus(); else removeUpdateNotice();
     } catch (_) {
       currentAdmin = null;
