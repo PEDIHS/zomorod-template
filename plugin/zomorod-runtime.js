@@ -52,7 +52,7 @@
       top:-60%;
       left:-52%;
       pointer-events:none;
-      background:linear-gradient(90deg,transparent,rgba(255,255,255,.20),rgba(255,230,157,.17),transparent);
+      background:linear-gradient(90deg,transparent,rgba(255,255,255,.20),color-mix(in srgb,var(--treasury-gold-bright) 17%,transparent),transparent);
       transform:rotate(14deg);
       animation:zomorodAnnSweep 4.8s cubic-bezier(.3,.7,.2,1) infinite;
     }
