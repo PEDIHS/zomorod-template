@@ -56,7 +56,62 @@ jobs:
           grep -q 'data-color-plane' plugin/zomorod-special.js
           grep -q 'zomorod-theme-style' plugin/zomorod-runtime.js
           grep -q 'theme-primary' plugin/zomorod-runtime.js
+          grep -q 'treasury-gold-foreground' plugin/zomorod-runtime.js
+          grep -q 'treasury-emerald-foreground' plugin/zomorod-runtime.js
           grep -q '\[role="tablist"\]' plugin/zomorod-special.js
+
+      - name: Guard complete theme coverage and semantic colors
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          css = Path('src/index.css').read_text()
+          treasury = css[css.index('/* Emerald Treasury'):]
+
+          # These were legacy hard-coded brand shades. They must never appear
+          # in Treasury component rules again; only the five palette defaults
+          # at the top of .treasury-shell may be literal.
+          body = treasury[treasury.index('--treasury-ivory:'):]
+          forbidden = [
+              '#07563f', '#034433', '#022e24', '#f2ca61', '#f3d274',
+              '#c99425', '#b47c16', '#efcc68', '#f3c953', '#e6a91e',
+              '#f3d576', '#f0d27a', '#e1b547', '#edca68', '#be8b21',
+              '#f0ce6e', '#bf8b21', '#086149', '#034534', '#022f25',
+              '#f0cc6a', '#e8c65f', '#f0cf72', '#087153', '#034333',
+          ]
+          lowered = body.lower()
+          found = [value for value in forbidden if value in lowered]
+          if found:
+              raise SystemExit(f'Legacy hard-coded Treasury brand colors remain: {found}')
+
+          ping_match = re.search(r'\.treasury-server-ping\s*\{([^}]*)\}', css, re.S)
+          if not ping_match:
+              raise SystemExit('Ping style block not found')
+          ping = ping_match.group(1)
+          if 'var(--success)' not in ping:
+              raise SystemExit('Ping must remain tied to semantic --success color')
+          if '--treasury-' in ping or 'var(--primary)' in ping or 'var(--secondary)' in ping:
+              raise SystemExit('Ping must not inherit customizable brand colors')
+
+          required = [
+              '.treasury-hero', '.treasury-orbit', '.treasury-quick-action',
+              '.treasury-subscription-card', '.treasury-support-button',
+              '--treasury-gold-foreground', '--treasury-emerald-foreground',
+          ]
+          missing = [item for item in required if item not in css]
+          if missing:
+              raise SystemExit(f'Missing theme-aware Treasury coverage: {missing}')
+
+          runtime = Path('plugin/zomorod-runtime.js').read_text().lower()
+          legacy_runtime = [
+              'rgba(16,185,129', 'rgba(184,134,11', 'rgba(6,95,70',
+              '#047857', '#059669', '#065f46', '#6ee7b7',
+          ]
+          found_runtime = [value for value in legacy_runtime if value in runtime]
+          if found_runtime:
+              raise SystemExit(f'Runtime still contains fixed brand accents: {found_runtime}')
+          PY
           grep -q 'querySelectorAll(tabSelector).length >= 1' plugin/zomorod-special.js
           grep -q 'normalizeConfigLinks' src/hooks/useUserData.ts
           grep -q '/raw' src/hooks/useUserData.ts

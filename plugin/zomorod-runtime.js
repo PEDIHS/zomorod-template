@@ -34,12 +34,12 @@
       position:relative!important;
       isolation:isolate;
       overflow:hidden!important;
-      border-color:rgba(16,185,129,.42)!important;
+      border-color:color-mix(in srgb,var(--treasury-emerald-bright) 42%,transparent)!important;
       background:
-        radial-gradient(circle at 8% 18%,rgba(16,185,129,.16),transparent 34%),
-        radial-gradient(circle at 92% 82%,rgba(184,134,11,.18),transparent 36%),
-        linear-gradient(135deg,rgba(6,95,70,.10),rgba(4,120,87,.055) 48%,rgba(184,134,11,.09))!important;
-      box-shadow:0 12px 38px rgba(6,95,70,.12),0 0 0 1px rgba(184,134,11,.08),inset 0 1px 0 rgba(255,255,255,.08)!important;
+        radial-gradient(circle at 8% 18%,color-mix(in srgb,var(--treasury-emerald-bright) 16%,transparent),transparent 34%),
+        radial-gradient(circle at 92% 82%,color-mix(in srgb,var(--treasury-gold) 18%,transparent),transparent 36%),
+        linear-gradient(135deg,color-mix(in srgb,var(--treasury-emerald) 10%,transparent),color-mix(in srgb,var(--treasury-emerald-bright) 5.5%,transparent) 48%,color-mix(in srgb,var(--treasury-gold) 9%,transparent))!important;
+      box-shadow:0 12px 38px color-mix(in srgb,var(--treasury-emerald) 12%,transparent),0 0 0 1px color-mix(in srgb,var(--treasury-gold) 8%,transparent),inset 0 1px 0 rgba(255,255,255,.08)!important;
       animation:zomorodAnnBreathe 3.4s ease-in-out infinite;
     }
     .zomorod-special-announcement>*{position:relative;z-index:2}
@@ -52,22 +52,22 @@
       top:-60%;
       left:-52%;
       pointer-events:none;
-      background:linear-gradient(90deg,transparent,rgba(255,255,255,.20),rgba(255,230,157,.17),transparent);
+      background:linear-gradient(90deg,transparent,rgba(255,255,255,.20),color-mix(in srgb,var(--treasury-gold-bright) 17%,transparent),transparent);
       transform:rotate(14deg);
       animation:zomorodAnnSweep 4.8s cubic-bezier(.3,.7,.2,1) infinite;
     }
     .zomorod-special-announcement .treasury-notice-icon{
-      color:#f4d57a!important;
-      border-color:rgba(184,134,11,.26)!important;
-      background:linear-gradient(145deg,#065f46,#047857 62%,#a06b16)!important;
-      box-shadow:0 0 0 1px rgba(255,255,255,.08),0 0 24px rgba(16,185,129,.20)!important;
+      color:var(--treasury-gold-bright)!important;
+      border-color:color-mix(in srgb,var(--treasury-gold) 26%,transparent)!important;
+      background:linear-gradient(145deg,var(--treasury-emerald-deep),var(--treasury-emerald) 62%,var(--treasury-gold))!important;
+      box-shadow:0 0 0 1px rgba(255,255,255,.08),0 0 24px color-mix(in srgb,var(--treasury-emerald-bright) 20%,transparent)!important;
       animation:zomorodAnnIcon 2.1s ease-in-out infinite;
     }
     .zomorod-special-announcement h2{
-      color:#047857!important;
-      text-shadow:0 0 18px rgba(16,185,129,.12);
+      color:var(--treasury-emerald)!important;
+      text-shadow:0 0 18px color-mix(in srgb,var(--treasury-emerald-bright) 12%,transparent);
     }
-    html.dark .zomorod-special-announcement h2{color:#6ee7b7!important}
+    html.dark .zomorod-special-announcement h2{color:var(--treasury-emerald-bright)!important}
     #${SUPPORT_ID}{
       min-height:34px;
       display:inline-flex;
@@ -75,17 +75,17 @@
       gap:.4rem;
       padding:.42rem .62rem;
       border-radius:999px;
-      border:1px solid rgba(16,185,129,.20);
+      border:1px solid color-mix(in srgb,var(--treasury-emerald-bright) 20%,transparent);
       color:inherit;
-      background:linear-gradient(135deg,rgba(16,185,129,.08),rgba(184,134,11,.08));
+      background:linear-gradient(135deg,color-mix(in srgb,var(--treasury-emerald-bright) 8%,transparent),color-mix(in srgb,var(--treasury-gold) 8%,transparent));
       font-size:.72rem;
       font-weight:750;
       text-decoration:none;
       white-space:nowrap;
       transition:transform .16s ease,border-color .16s ease,background .16s ease;
     }
-    #${SUPPORT_ID}:hover{transform:translateY(-1px);border-color:rgba(16,185,129,.38);background:linear-gradient(135deg,rgba(16,185,129,.12),rgba(184,134,11,.11))}
-    #${SUPPORT_ID} .zomorod-support-gem{color:#059669;font-size:.78rem;line-height:1}
+    #${SUPPORT_ID}:hover{transform:translateY(-1px);border-color:color-mix(in srgb,var(--treasury-emerald-bright) 38%,transparent);background:linear-gradient(135deg,color-mix(in srgb,var(--treasury-emerald-bright) 12%,transparent),color-mix(in srgb,var(--treasury-gold) 11%,transparent))}
+    #${SUPPORT_ID} .zomorod-support-gem{color:var(--treasury-emerald-bright);font-size:.78rem;line-height:1}
     #${SUPPORT_ID} .zomorod-support-label{max-width:128px;overflow:hidden;text-overflow:ellipsis}
     @media(max-width:560px){ #${SUPPORT_ID}{padding:.42rem .52rem}#${SUPPORT_ID} .zomorod-support-value{display:none}}
     @keyframes zomorodAnnSweep{
@@ -95,8 +95,8 @@
       70%,100%{left:122%;opacity:0}
     }
     @keyframes zomorodAnnBreathe{
-      0%,100%{transform:translateY(0);box-shadow:0 12px 38px rgba(6,95,70,.12),0 0 0 1px rgba(184,134,11,.08)}
-      50%{transform:translateY(-1px);box-shadow:0 16px 46px rgba(6,95,70,.18),0 0 0 1px rgba(184,134,11,.16),0 0 30px rgba(16,185,129,.08)}
+      0%,100%{transform:translateY(0);box-shadow:0 12px 38px color-mix(in srgb,var(--treasury-emerald) 12%,transparent),0 0 0 1px color-mix(in srgb,var(--treasury-gold) 8%,transparent)}
+      50%{transform:translateY(-1px);box-shadow:0 16px 46px color-mix(in srgb,var(--treasury-emerald) 18%,transparent),0 0 0 1px color-mix(in srgb,var(--treasury-gold) 16%,transparent),0 0 30px color-mix(in srgb,var(--treasury-emerald-bright) 8%,transparent)}
     }
     @keyframes zomorodAnnIcon{
       0%,100%{transform:scale(1) rotate(0deg)}
@@ -184,6 +184,7 @@
         `--ring:${primary}`,
         `--treasury-gold:${primary}`,
         `--treasury-gold-bright:${primaryBright}`,
+        `--treasury-gold-foreground:${contrastText(primary)}`,
       );
       dark.push(
         `--primary:${darkPrimary}`,
@@ -192,6 +193,7 @@
         `--ring:${darkPrimary}`,
         `--treasury-gold:${primary}`,
         `--treasury-gold-bright:${darkPrimaryBright}`,
+        `--treasury-gold-foreground:${contrastText(primary)}`,
       );
     }
 
@@ -206,6 +208,7 @@
         `--treasury-emerald:${secondary}`,
         `--treasury-emerald-deep:${secondaryDeep}`,
         `--treasury-emerald-bright:${secondaryBright}`,
+        `--treasury-emerald-foreground:${contrastText(secondary)}`,
       );
       dark.push(
         `--secondary:${darkSecondary}`,
@@ -213,6 +216,7 @@
         `--treasury-emerald:${secondary}`,
         `--treasury-emerald-deep:${secondaryDeep}`,
         `--treasury-emerald-bright:${darkSecondaryBright}`,
+        `--treasury-emerald-foreground:${contrastText(secondary)}`,
       );
     }
 
