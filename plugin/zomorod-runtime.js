@@ -236,17 +236,27 @@
   };
 
   const isWireGuardRow = (row) => {
-    const protocol = row.querySelector('.treasury-config-protocol')?.textContent?.trim().toUpperCase();
+    const protocol = row
+      .querySelector('.treasury-config-protocol, .ios-protocol-badge')
+      ?.textContent?.trim().toUpperCase();
     return protocol === 'WG' || protocol === 'WIREGUARD';
   };
 
   const applyConnections = (config) => {
-    const rows = [...document.querySelectorAll('.treasury-server-row')].filter((row) => row instanceof HTMLElement);
+    // Support both the legacy server rows and the current subscription card UI.
+    const rows = [...document.querySelectorAll('.treasury-server-row, .treasury-config-card')]
+      .filter((row) => row instanceof HTMLElement);
     const hasWireGuard = rows.some(isWireGuardRow);
 
     rows.forEach((row) => {
       const visible = isWireGuardRow(row) ? config.showWireGuard : config.showConfigs;
       setDisplay(row, visible);
+    });
+
+    // The dedicated archive action is rendered separately from the config rows.
+    // Keep it in sync with the same WireGuard visibility switch.
+    document.querySelectorAll('a[download][href$="/wireguard"]').forEach((node) => {
+      setDisplay(node, config.showWireGuard);
     });
 
     const section = document.querySelector('.treasury-links-section');
