@@ -19,6 +19,7 @@
   let updatePollTimer = null;
   const UPDATE_NOTICE_ID = 'zomorod-update-notice';
   let maintainQueued = false;
+  let uiObserver = null;
   let accessResolved = false;
   let accessAllowed = false;
   let isOwner = false;
@@ -1065,32 +1066,42 @@
     if (active) setTabState(true);
   }
 
+  function observeUi() {
+    if (!uiObserver || !document.documentElement) return;
+    uiObserver.observe(document.documentElement, { subtree: true, childList: true });
+  }
+
   function maintain() {
     maintainQueued = false;
-    if (!isSettingsRoute()) {
-      active = false;
-      document.getElementById(ROOT_ID)?.remove();
-      document.getElementById(NAV_ID)?.remove();
-      return;
-    }
-    if (!accessResolved || !accessAllowed) {
-      removeUi();
-      return;
-    }
-    const tabBar = findSettingsTabBar();
-    if (!tabBar) {
-      if (active) deactivate();
-      return;
-    }
-    ensureTab();
-    if (active) {
-      const outlet = getOutlet(tabBar);
-      if (outlet) hideNativeChildren(outlet);
-      setTabState(true);
-      if (!document.getElementById(ROOT_ID)) {
-        if (isOwner && cachedSettings) renderOwner(cachedSettings);
-        else if (!isOwner && cachedProfile) renderReseller(cachedProfile);
+    uiObserver?.disconnect();
+    try {
+      if (!isSettingsRoute()) {
+        active = false;
+        document.getElementById(ROOT_ID)?.remove();
+        document.getElementById(NAV_ID)?.remove();
+        return;
       }
+      if (!accessResolved || !accessAllowed) {
+        removeUi();
+        return;
+      }
+      const tabBar = findSettingsTabBar();
+      if (!tabBar) {
+        if (active) deactivate();
+        return;
+      }
+      ensureTab();
+      if (active) {
+        const outlet = getOutlet(tabBar);
+        if (outlet) hideNativeChildren(outlet);
+        setTabState(true);
+        if (!document.getElementById(ROOT_ID)) {
+          if (isOwner && cachedSettings) renderOwner(cachedSettings);
+          else if (!isOwner && cachedProfile) renderReseller(cachedProfile);
+        }
+      }
+    } finally {
+      observeUi();
     }
   }
 
@@ -1118,8 +1129,8 @@
 
   window.addEventListener('popstate', () => { if (active) deactivate(); scheduleMaintain(); });
   window.addEventListener('hashchange', () => { if (!isSettingsRoute()) active = false; scheduleMaintain(); });
-  const observer = new MutationObserver(scheduleMaintain);
-  observer.observe(document.documentElement, { subtree: true, childList: true });
+  uiObserver = new MutationObserver(scheduleMaintain);
+  observeUi();
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => { resolveAccess(); scheduleMaintain(); }, { once: true });
   } else {
