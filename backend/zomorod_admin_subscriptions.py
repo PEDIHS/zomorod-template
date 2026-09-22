@@ -170,12 +170,13 @@ def _clone_state(state: dict) -> dict:
     }
 
 
-def _load_state() -> dict:
+def _load_state(*, mutable: bool = False) -> dict:
     """Read namespace state only when the file actually changed.
 
     Subscription URL generation can call this function many times per request.
     A cheap stat() avoids repeated disk reads and JSON parsing while still
-    noticing external edits immediately via mtime/size changes.
+    noticing external edits immediately via mtime/size changes. Read-only
+    callers share the cached object; writers explicitly request a small copy.
     """
     try:
         stat = ROUTES_FILE.stat()
@@ -186,19 +187,20 @@ def _load_state() -> dict:
             and _ROUTES_CACHE.get("mtime_ns") == mtime_ns
             and _ROUTES_CACHE.get("size") == size
         ):
-            return _clone_state(cached)
+            return _clone_state(cached) if mutable else cached
         data = json.loads(ROUTES_FILE.read_text(encoding="utf-8"))
         state = (
             {"version": 1, "routes": data["routes"]}
             if isinstance(data, dict) and isinstance(data.get("routes"), dict)
             else _empty_state()
         )
-        _ROUTES_CACHE.update({"mtime_ns": mtime_ns, "size": size, "state": _clone_state(state)})
-        return _clone_state(state)
+        cached_state = _clone_state(state)
+        _ROUTES_CACHE.update({"mtime_ns": mtime_ns, "size": size, "state": cached_state})
+        return _clone_state(cached_state) if mutable else cached_state
     except (FileNotFoundError, json.JSONDecodeError, OSError, TypeError):
         state = _empty_state()
         _ROUTES_CACHE.update({"mtime_ns": None, "size": None, "state": state})
-        return _clone_state(state)
+        return _clone_state(state) if mutable else state
 
 
 @contextmanager
@@ -456,7 +458,7 @@ def _upsert_namespace_for_admin(admin: Admin, slug_value: str | None, enabled: b
     requested = slug_value if slug_value is not None else (current or {}).get("slug")
     slug = _normalize_slug(requested, admin.username, int(admin.id))
     with _write_lock():
-        state = _load_state()
+        state = _load_state(mutable=True)
         routes = state.setdefault("routes", {})
         existing = routes.get(slug)
         if existing and int(existing.get("admin_id", 0) or 0) != int(admin.id):
@@ -811,7 +813,7 @@ async def delete_admin_namespace(
 ):
     normalized = slug.strip().lower()
     with _write_lock():
-        state = _load_state()
+        state = _load_state(mutable=True)
         if normalized not in state.get("routes", {}):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Namespace not found")
         del state["routes"][normalized]
