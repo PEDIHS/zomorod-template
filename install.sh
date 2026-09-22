@@ -247,11 +247,10 @@ install_systemd_units() {
   systemctl enable --now zomorod-panel-update.path >/dev/null 2>&1 || warn "panel update watcher could not be enabled"
   systemctl enable zomorod-integrator.timer >/dev/null 2>&1 || warn "fallback timer could not be enabled"
   systemctl restart zomorod-integrator.timer >/dev/null 2>&1 || warn "fallback timer could not be restarted"
-  # Start the persistent Docker lifecycle listener before PasarGuard is restarted.
-  # It lives on the host, so it survives panel container replacement and can
-  # re-inject Zomorod (and HS-PG when installed) into the newly created container.
-  systemctl enable zomorod-integrator.service >/dev/null 2>&1 || true
-  systemctl restart zomorod-integrator.service >/dev/null 2>&1 || warn "persistence guard could not be started immediately"
+  # The integrator is deliberately oneshot: path changes trigger it immediately,
+  # while a low-frequency timer provides self-healing after container recreation.
+  # Keeping it resident and scanning Docker every minute caused needless CPU/I/O.
+  systemctl start zomorod-integrator.service >/dev/null 2>&1 || warn "initial reconciliation could not be started"
 }
 
 write_install_state() {
@@ -303,17 +302,17 @@ safe_restart_pasarguard() {
       /opt/hs-pg/plugin/integrate-dashboard.sh >/dev/null 2>&1 || true
     fi
     if command -v systemctl >/dev/null 2>&1; then
-      systemctl is-active --quiet zomorod-integrator.service && {
-        log "host persistence guard is active after PasarGuard restart"
+      if systemctl is-active --quiet zomorod-integrator.path && systemctl is-active --quiet zomorod-integrator.timer; then
+        log "event-driven integration guard is active after PasarGuard restart"
         return 0
-      }
+      fi
     else
       return 0
     fi
     sleep 1
   done
 
-  warn "PasarGuard restarted; integration guard will continue reconciling in the background"
+  warn "PasarGuard restarted; event watcher and low-frequency reconciliation timer remain enabled"
   return 0
 }
 
@@ -345,7 +344,7 @@ main() {
   printf '  • Backup:                %s\n' "${BACKUP_DIR}"
   printf '  • Settings tab:          Zomorod · Special (Owner + reseller scoped)\n'
   printf '  • Theme storage:         isolated as zomorod-theme\n'
-  printf '  • Persistence:           pre-start Python bootstrap + host integration guard\n'
+  printf '  • Persistence:           pre-start Python bootstrap + event watcher + low-frequency self-heal\n'
   printf '  • Service lifecycle:     safe PasarGuard CLI restart only; no raw Docker lifecycle commands\n'
   printf '  • Update command:        sudo zomorod update\n'
   printf '\nOwner-only /sub/<admin>/<subscription-hash> routes are activated by the safe PasarGuard restart when its official CLI is available.\n'
