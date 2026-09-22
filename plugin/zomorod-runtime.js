@@ -28,6 +28,8 @@
 
   let applyQueued = false;
   let refreshInFlight = false;
+  let domObserver = null;
+  const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
   const specialCss = `
     .zomorod-special-announcement{
@@ -433,21 +435,34 @@
     document.documentElement.removeAttribute('data-zomorod');
   };
 
+  const observeDom = () => {
+    if (!domObserver || !document.documentElement) return;
+    domObserver.observe(document.documentElement, { subtree: true, childList: true });
+  };
+
   const apply = () => {
     applyQueued = false;
     if (!state.loaded) return;
 
-    const config = state.config;
-    applyTheme(config);
-    updateBrand(config.storeName);
-    applySupport(config.supportId);
-    applyConnections(config);
-    applyPing(config.showPing);
-    applyApps(config.showApps);
-    applyAnnouncement(config);
+    // Avoid observing DOM mutations produced by Zomorod itself. Without this,
+    // our own updates can enqueue another animation-frame pass and cause a
+    // self-sustaining render loop on dynamic subscription pages.
+    domObserver?.disconnect();
+    try {
+      const config = state.config;
+      applyTheme(config);
+      updateBrand(config.storeName);
+      applySupport(config.supportId);
+      applyConnections(config);
+      applyPing(config.showPing);
+      applyApps(config.showApps);
+      applyAnnouncement(config);
 
-    if (document.documentElement.getAttribute('data-zomorod') !== 'active') {
-      document.documentElement.setAttribute('data-zomorod', 'active');
+      if (document.documentElement.getAttribute('data-zomorod') !== 'active') {
+        document.documentElement.setAttribute('data-zomorod', 'active');
+      }
+    } finally {
+      observeDom();
     }
   };
 
@@ -481,10 +496,18 @@
 
   const start = async () => {
     await refreshSettings({ initial: true });
-    const observer = new MutationObserver(scheduleApply);
-    observer.observe(document.documentElement, { subtree: true, childList: true });
-    window.setInterval(() => refreshSettings(), 60000);
-    window.setInterval(scheduleApply, 30000);
+    domObserver = new MutationObserver(scheduleApply);
+    observeDom();
+
+    // Settings rarely change while a subscription page is open. Refresh less
+    // often and never poll a background tab; DOM changes are already handled by
+    // the observer, so the previous 30-second forced repaint is unnecessary.
+    window.setInterval(() => {
+      if (!document.hidden) void refreshSettings();
+    }, REFRESH_INTERVAL_MS);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) void refreshSettings();
+    });
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
