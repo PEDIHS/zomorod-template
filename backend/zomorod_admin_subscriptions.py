@@ -75,6 +75,7 @@ UPDATE_STATUS_FILE = DATA_DIR / "update-status.json"
 UPDATE_REPO_API = "https://api.github.com/repos/PEDIHS/zomorod-template/commits/main"
 UPDATE_CACHE_TTL = 300
 _UPDATE_CACHE: dict[str, object] = {"checked_at": 0.0, "latest_sha": None, "error": None}
+_ROUTES_CACHE: dict[str, object] = {"mtime_ns": None, "size": None, "state": None}
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 RESERVED_SLUGS = {"api", "info", "raw", "apps", "usage", "admin", "zomorod"}
 
@@ -161,14 +162,43 @@ def _empty_state() -> dict:
     return {"version": 1, "routes": {}}
 
 
+def _clone_state(state: dict) -> dict:
+    routes = state.get("routes", {}) if isinstance(state, dict) else {}
+    return {
+        "version": 1,
+        "routes": {str(slug): dict(item) for slug, item in routes.items() if isinstance(item, dict)},
+    }
+
+
 def _load_state() -> dict:
+    """Read namespace state only when the file actually changed.
+
+    Subscription URL generation can call this function many times per request.
+    A cheap stat() avoids repeated disk reads and JSON parsing while still
+    noticing external edits immediately via mtime/size changes.
+    """
     try:
+        stat = ROUTES_FILE.stat()
+        mtime_ns, size = stat.st_mtime_ns, stat.st_size
+        cached = _ROUTES_CACHE.get("state")
+        if (
+            cached is not None
+            and _ROUTES_CACHE.get("mtime_ns") == mtime_ns
+            and _ROUTES_CACHE.get("size") == size
+        ):
+            return _clone_state(cached)
         data = json.loads(ROUTES_FILE.read_text(encoding="utf-8"))
-        if not isinstance(data, dict) or not isinstance(data.get("routes"), dict):
-            return _empty_state()
-        return {"version": 1, "routes": data["routes"]}
+        state = (
+            {"version": 1, "routes": data["routes"]}
+            if isinstance(data, dict) and isinstance(data.get("routes"), dict)
+            else _empty_state()
+        )
+        _ROUTES_CACHE.update({"mtime_ns": mtime_ns, "size": size, "state": _clone_state(state)})
+        return _clone_state(state)
     except (FileNotFoundError, json.JSONDecodeError, OSError, TypeError):
-        return _empty_state()
+        state = _empty_state()
+        _ROUTES_CACHE.update({"mtime_ns": None, "size": None, "state": state})
+        return _clone_state(state)
 
 
 @contextmanager
@@ -188,6 +218,13 @@ def _save_state(state: dict) -> None:
     tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     os.chmod(tmp, 0o600)
     os.replace(tmp, ROUTES_FILE)
+    try:
+        stat = ROUTES_FILE.stat()
+        _ROUTES_CACHE.update(
+            {"mtime_ns": stat.st_mtime_ns, "size": stat.st_size, "state": _clone_state(state)}
+        )
+    except OSError:
+        _ROUTES_CACHE.update({"mtime_ns": None, "size": None, "state": None})
 
 
 def _read_json_file(path: Path) -> dict:
