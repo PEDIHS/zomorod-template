@@ -1612,6 +1612,354 @@
   }
 }
 
+/* Premium adaptive theme layer — derives the full visual identity from the two brand colors. */
+@layer components {
+  .treasury-shell {
+    --treasury-surface: color-mix(in srgb, var(--card) 93%, var(--treasury-emerald) 7%);
+    --treasury-surface-warm: color-mix(in srgb, var(--card) 94%, var(--treasury-gold) 6%);
+    --treasury-surface-mixed: color-mix(in srgb, var(--treasury-surface) 76%, var(--treasury-surface-warm) 24%);
+    --treasury-stroke: color-mix(in srgb, var(--border) 70%, var(--treasury-emerald) 30%);
+    --treasury-stroke-warm: color-mix(in srgb, var(--border) 72%, var(--treasury-gold) 28%);
+    --treasury-hero-mid: color-mix(in srgb, var(--treasury-emerald) 80%, var(--treasury-gold) 20%);
+    --treasury-hero-deep: color-mix(in srgb, var(--treasury-emerald-deep) 88%, #000 12%);
+    --treasury-glow: color-mix(in srgb, var(--treasury-gold) 52%, var(--treasury-emerald-bright) 48%);
+    --treasury-brand-shadow: color-mix(in srgb, var(--treasury-emerald-deep) 26%, transparent);
+    background:
+      radial-gradient(ellipse at 84% -4%, color-mix(in srgb, var(--treasury-gold) 15%, transparent), transparent 34rem),
+      radial-gradient(ellipse at -8% 31%, color-mix(in srgb, var(--treasury-emerald-bright) 12%, transparent), transparent 30rem),
+      radial-gradient(ellipse at 58% 78%, color-mix(in srgb, var(--treasury-glow) 6%, transparent), transparent 34rem),
+      var(--background);
+  }
+
+  .dark .treasury-shell {
+    --treasury-surface: color-mix(in srgb, var(--card) 90%, var(--treasury-emerald) 10%);
+    --treasury-surface-warm: color-mix(in srgb, var(--card) 92%, var(--treasury-gold) 8%);
+    --treasury-stroke: color-mix(in srgb, var(--border) 64%, var(--treasury-emerald-bright) 36%);
+    --treasury-stroke-warm: color-mix(in srgb, var(--border) 68%, var(--treasury-gold-bright) 32%);
+  }
+
+  .treasury-ambient {
+    background-image:
+      linear-gradient(color-mix(in srgb, var(--treasury-emerald) 4%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--treasury-gold) 3.5%, transparent) 1px, transparent 1px);
+    background-size: 42px 42px;
+    mask-image: linear-gradient(to bottom, rgba(0,0,0,.72), transparent 78%);
+    -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,.72), transparent 78%);
+  }
+
+  .treasury-ambient::before {
+    width: 30rem;
+    height: 30rem;
+    inset-inline-end: -13rem;
+    top: 2rem;
+    background: radial-gradient(circle, color-mix(in srgb, var(--treasury-gold) 15%, transparent), transparent 68%);
+    filter: blur(72px);
+  }
+
+  .treasury-ambient::after {
+    width: 32rem;
+    height: 32rem;
+    inset-inline-start: -16rem;
+    top: 34rem;
+    background: radial-gradient(circle, color-mix(in srgb, var(--treasury-emerald-bright) 13%, transparent), transparent 68%);
+    filter: blur(78px);
+  }
+
+  .treasury-navigation {
+    border-bottom-color: color-mix(in srgb, var(--treasury-stroke) 64%, transparent);
+    background:
+      linear-gradient(90deg, color-mix(in srgb, var(--treasury-emerald) 3.5%, transparent), color-mix(in srgb, var(--background) 84%, transparent), color-mix(in srgb, var(--treasury-gold) 4%, transparent));
+    box-shadow: 0 10px 35px color-mix(in srgb, var(--treasury-brand-shadow) 28%, transparent), inset 0 -1px 0 color-mix(in srgb, #fff 6%, transparent);
+    backdrop-filter: saturate(165%) blur(30px);
+    -webkit-backdrop-filter: saturate(165%) blur(30px);
+  }
+
+  .treasury-brand {
+    color: color-mix(in srgb, var(--treasury-emerald) 88%, var(--foreground) 12%);
+    text-shadow: 0 6px 20px color-mix(in srgb, var(--treasury-emerald) 14%, transparent);
+  }
+
+  .dark .treasury-brand {
+    color: color-mix(in srgb, var(--treasury-gold-bright) 88%, var(--foreground) 12%);
+  }
+
+  .treasury-brand-shield {
+    border-color: color-mix(in srgb, var(--treasury-gold-bright) 54%, transparent);
+    background:
+      radial-gradient(circle at 28% 18%, color-mix(in srgb, #fff 18%, transparent), transparent 28%),
+      linear-gradient(145deg, color-mix(in srgb, var(--treasury-emerald-bright) 92%, #fff 8%), var(--treasury-hero-mid) 58%, var(--treasury-hero-deep));
+    box-shadow:
+      0 10px 28px color-mix(in srgb, var(--treasury-emerald-deep) 26%, transparent),
+      0 0 0 4px color-mix(in srgb, var(--treasury-gold) 5%, transparent),
+      inset 0 1px 0 color-mix(in srgb, #fff 22%, transparent);
+  }
+
+  .treasury-titlebar {
+    padding-top: 0.45rem;
+    padding-bottom: 0.7rem;
+  }
+
+  .treasury-titlebar h1 {
+    background: linear-gradient(110deg, var(--foreground), color-mix(in srgb, var(--foreground) 80%, var(--treasury-emerald) 20%), color-mix(in srgb, var(--foreground) 82%, var(--treasury-gold) 18%));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-wrap: balance;
+  }
+
+  .treasury-kicker {
+    width: fit-content;
+    border: 1px solid color-mix(in srgb, var(--treasury-gold) 18%, var(--border));
+    border-radius: 999px;
+    padding: 0.34rem 0.58rem;
+    color: color-mix(in srgb, var(--primary) 86%, var(--foreground) 14%);
+    background: color-mix(in srgb, var(--treasury-surface-warm) 78%, transparent);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 12%, transparent);
+  }
+
+  .treasury-refresh {
+    border-color: var(--treasury-stroke);
+    border-radius: 16px;
+    color: color-mix(in srgb, var(--treasury-emerald) 88%, var(--foreground) 12%);
+    background:
+      linear-gradient(145deg, color-mix(in srgb, var(--treasury-surface) 88%, #fff 12%), var(--treasury-surface-mixed));
+    box-shadow:
+      0 10px 26px color-mix(in srgb, var(--treasury-brand-shadow) 16%, transparent),
+      inset 0 1px 0 color-mix(in srgb, #fff 30%, transparent);
+  }
+
+  .treasury-hero:not(.is-traffic-empty) {
+    border-color: color-mix(in srgb, var(--treasury-gold-bright) 42%, var(--treasury-emerald-bright) 18%);
+    background:
+      radial-gradient(circle at 86% 8%, color-mix(in srgb, var(--treasury-gold-bright) 25%, transparent), transparent 29%),
+      radial-gradient(circle at 12% 90%, color-mix(in srgb, var(--treasury-emerald-bright) 23%, transparent), transparent 42%),
+      linear-gradient(145deg, color-mix(in srgb, var(--treasury-emerald-bright) 90%, #fff 10%) 0%, var(--treasury-hero-mid) 48%, var(--treasury-hero-deep) 100%);
+    box-shadow:
+      0 32px 90px color-mix(in srgb, var(--treasury-emerald-deep) 30%, transparent),
+      0 12px 34px color-mix(in srgb, var(--treasury-gold) 8%, transparent),
+      inset 0 1px 0 color-mix(in srgb, #fff 18%, transparent);
+  }
+
+  .treasury-hero:not(.is-traffic-empty)::before {
+    inset: 9px;
+    border-color: color-mix(in srgb, #fff 10%, transparent);
+    box-shadow: inset 0 0 40px color-mix(in srgb, var(--treasury-gold) 4%, transparent);
+  }
+
+  .treasury-hero:not(.is-traffic-empty)::after {
+    position: absolute;
+    z-index: 0;
+    inset: 0;
+    background:
+      linear-gradient(115deg, transparent 0 43%, color-mix(in srgb, #fff 8%, transparent) 49%, transparent 55%),
+      repeating-linear-gradient(128deg, color-mix(in srgb, #fff 2.5%, transparent) 0 1px, transparent 1px 12px);
+    content: "";
+    pointer-events: none;
+  }
+
+  .treasury-hero-glow {
+    width: 29rem;
+    height: 29rem;
+    inset-inline-end: -9rem;
+    top: -10rem;
+    background: radial-gradient(circle, color-mix(in srgb, var(--treasury-glow) 22%, transparent), transparent 67%);
+    filter: blur(42px);
+  }
+
+  .treasury-shield {
+    border-color: color-mix(in srgb, var(--treasury-gold-bright) 72%, transparent);
+    background:
+      radial-gradient(circle at 30% 20%, color-mix(in srgb, #fff 16%, transparent), transparent 28%),
+      linear-gradient(145deg, color-mix(in srgb, var(--treasury-gold-bright) 22%, transparent), color-mix(in srgb, var(--treasury-emerald-deep) 58%, transparent));
+    box-shadow:
+      0 16px 38px color-mix(in srgb, var(--treasury-emerald-deep) 28%, transparent),
+      0 0 0 5px color-mix(in srgb, var(--treasury-gold-bright) 5%, transparent),
+      inset 0 1px 0 color-mix(in srgb, #fff 20%, transparent);
+  }
+
+  .treasury-quick-action {
+    border: 1px solid color-mix(in srgb, #fff 24%, transparent);
+    background:
+      radial-gradient(circle at 22% 12%, color-mix(in srgb, #fff 30%, transparent), transparent 34%),
+      linear-gradient(135deg, color-mix(in srgb, var(--treasury-gold-bright) 82%, #fff 18%), var(--treasury-gold) 58%, color-mix(in srgb, var(--treasury-gold) 72%, var(--treasury-emerald) 28%));
+    box-shadow:
+      0 15px 34px color-mix(in srgb, var(--treasury-gold) 34%, transparent),
+      inset 0 1px 0 color-mix(in srgb, #fff 58%, transparent);
+  }
+
+  .treasury-orbit {
+    border-color: color-mix(in srgb, var(--treasury-gold-bright) 34%, transparent);
+    background:
+      radial-gradient(circle, color-mix(in srgb, var(--treasury-hero-deep) 94%, transparent) 57%, transparent 58%),
+      conic-gradient(from -90deg, color-mix(in srgb, var(--treasury-gold-bright) 88%, #fff 12%) var(--progress), color-mix(in srgb, var(--treasury-gold-bright) 10%, transparent) 0);
+    box-shadow:
+      0 0 0 8px color-mix(in srgb, var(--treasury-gold-bright) 6%, transparent),
+      0 0 0 18px color-mix(in srgb, var(--treasury-emerald-bright) 4%, transparent),
+      0 24px 70px color-mix(in srgb, #000 28%, transparent),
+      inset 0 0 42px color-mix(in srgb, var(--treasury-gold) 8%, transparent);
+  }
+
+  .treasury-metrics,
+  .treasury-reservoir,
+  .treasury-notice,
+  .treasury-detail-strip,
+  .treasury-shell [data-slot="card"],
+  .treasury-shell .ios-grouped-list,
+  .treasury-shell .ios-accordion-item,
+  .treasury-config-card {
+    border-color: var(--treasury-stroke);
+    background:
+      radial-gradient(circle at 92% 0%, color-mix(in srgb, var(--treasury-gold) 5%, transparent), transparent 32%),
+      linear-gradient(145deg, var(--treasury-surface), var(--treasury-surface-warm));
+    box-shadow:
+      0 16px 46px color-mix(in srgb, var(--treasury-brand-shadow) 14%, transparent),
+      inset 0 1px 0 color-mix(in srgb, #fff 16%, transparent);
+    backdrop-filter: saturate(135%) blur(16px);
+    -webkit-backdrop-filter: saturate(135%) blur(16px);
+  }
+
+  .treasury-metrics {
+    border-radius: 1.7rem;
+    background:
+      linear-gradient(90deg, color-mix(in srgb, var(--treasury-surface) 96%, transparent), color-mix(in srgb, var(--treasury-surface-warm) 96%, transparent));
+  }
+
+  .treasury-metric {
+    position: relative;
+    padding-block: 0.3rem;
+  }
+
+  .treasury-metric strong {
+    text-shadow: 0 6px 18px color-mix(in srgb, var(--treasury-emerald) 7%, transparent);
+  }
+
+  .treasury-filament {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--treasury-gold) 56%, transparent), color-mix(in srgb, var(--treasury-emerald) 36%, transparent), transparent);
+  }
+
+  .treasury-reservoir {
+    border-color: color-mix(in srgb, var(--liquid-color) 24%, var(--treasury-stroke));
+    background:
+      radial-gradient(circle at 84% 18%, color-mix(in srgb, var(--liquid-color) 11%, transparent), transparent 40%),
+      radial-gradient(circle at 8% 90%, color-mix(in srgb, var(--treasury-gold) 4%, transparent), transparent 36%),
+      linear-gradient(145deg, var(--treasury-surface), var(--treasury-surface-warm));
+  }
+
+  .treasury-liquid-vessel {
+    border-color: color-mix(in srgb, var(--liquid-color) 34%, var(--treasury-stroke));
+    background:
+      radial-gradient(circle at 50% 110%, color-mix(in srgb, var(--liquid-color) 12%, transparent), transparent 45%),
+      linear-gradient(180deg, color-mix(in srgb, #fff 8%, transparent), transparent),
+      color-mix(in srgb, var(--treasury-surface) 74%, var(--muted) 26%);
+    box-shadow:
+      inset 0 0 0 5px color-mix(in srgb, var(--treasury-surface-warm) 34%, transparent),
+      inset 0 14px 32px color-mix(in srgb, #000 4%, transparent),
+      0 12px 30px color-mix(in srgb, var(--treasury-brand-shadow) 8%, transparent);
+  }
+
+  .treasury-notice {
+    border-color: color-mix(in srgb, var(--treasury-emerald) 24%, var(--treasury-stroke));
+  }
+
+  .treasury-notice-icon,
+  .treasury-section-title > div > span,
+  .treasury-links-heading > span,
+  .treasury-config-number {
+    border: 1px solid color-mix(in srgb, var(--treasury-gold) 18%, var(--border));
+    background:
+      linear-gradient(145deg, color-mix(in srgb, var(--treasury-gold) 13%, var(--card-solid)), color-mix(in srgb, var(--treasury-emerald) 5%, var(--card-solid)));
+    box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 20%, transparent);
+  }
+
+  .treasury-detail-strip {
+    overflow: clip;
+  }
+
+  .treasury-detail-strip > div {
+    background: linear-gradient(145deg, transparent, color-mix(in srgb, var(--treasury-emerald) 2.5%, transparent));
+  }
+
+  .treasury-shell .ios-compact-button,
+  .treasury-copy-all,
+  .treasury-support-button {
+    border: 1px solid color-mix(in srgb, #fff 14%, transparent);
+    background:
+      radial-gradient(circle at 20% 0%, color-mix(in srgb, #fff 22%, transparent), transparent 32%),
+      linear-gradient(135deg, color-mix(in srgb, var(--treasury-emerald-bright) 90%, #fff 10%), var(--treasury-hero-mid) 64%, var(--treasury-hero-deep));
+    box-shadow:
+      0 12px 30px color-mix(in srgb, var(--treasury-emerald-deep) 25%, transparent),
+      inset 0 1px 0 color-mix(in srgb, #fff 18%, transparent);
+  }
+
+  .treasury-shell .ios-segmented-control {
+    border: 1px solid var(--treasury-stroke);
+    background: color-mix(in srgb, var(--treasury-surface) 84%, transparent);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 14%, transparent);
+  }
+
+  .treasury-shell .ios-segmented-item.is-selected {
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--treasury-emerald-bright) 88%, #fff 12%), var(--treasury-hero-mid));
+    box-shadow:
+      0 8px 20px color-mix(in srgb, var(--treasury-emerald) 22%, transparent),
+      inset 0 1px 0 color-mix(in srgb, #fff 16%, transparent);
+  }
+
+  .treasury-config-card {
+    min-height: 94px;
+  }
+
+  .treasury-config-rail {
+    width: 4px;
+    top: 16%;
+    bottom: 16%;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--treasury-gold-bright) 88%, #fff 12%), var(--treasury-glow), var(--treasury-emerald-bright));
+    box-shadow: 0 0 18px color-mix(in srgb, var(--treasury-glow) 24%, transparent);
+  }
+
+  .treasury-server-icon {
+    border-color: color-mix(in srgb, var(--treasury-emerald) 28%, var(--border));
+    background:
+      radial-gradient(circle at 30% 20%, color-mix(in srgb, #fff 22%, transparent), transparent 32%),
+      linear-gradient(145deg, color-mix(in srgb, var(--treasury-emerald-bright) 12%, var(--card-solid)), color-mix(in srgb, var(--treasury-gold) 4%, var(--card-solid)));
+  }
+
+  .treasury-config-protocol,
+  .treasury-shell .ios-protocol-badge {
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--treasury-emerald-bright) 90%, #fff 10%), var(--treasury-hero-mid));
+    box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 16%, transparent);
+  }
+
+  .treasury-link-action {
+    border-color: var(--treasury-stroke);
+    color: color-mix(in srgb, var(--treasury-emerald) 86%, var(--foreground) 14%);
+    background:
+      linear-gradient(145deg, color-mix(in srgb, var(--treasury-surface) 88%, #fff 12%), var(--treasury-surface-warm));
+    box-shadow:
+      0 8px 20px color-mix(in srgb, var(--treasury-brand-shadow) 10%, transparent),
+      inset 0 1px 0 color-mix(in srgb, #fff 18%, transparent);
+  }
+
+  .treasury-subscription-card {
+    border-color: color-mix(in srgb, var(--treasury-gold-bright) 32%, var(--treasury-stroke));
+    background:
+      radial-gradient(circle at 88% 0%, color-mix(in srgb, var(--treasury-gold-bright) 12%, transparent), transparent 34%),
+      linear-gradient(145deg, color-mix(in srgb, var(--treasury-emerald) 92%, #fff 8%), var(--treasury-hero-mid) 62%, var(--treasury-hero-deep));
+    box-shadow:
+      0 20px 50px color-mix(in srgb, var(--treasury-emerald-deep) 26%, transparent),
+      inset 0 1px 0 color-mix(in srgb, #fff 14%, transparent);
+  }
+
+  .treasury-traffic-card {
+    background:
+      radial-gradient(circle at 88% 0%, color-mix(in srgb, var(--treasury-gold) 8%, transparent), transparent 32%),
+      radial-gradient(circle at 8% 100%, color-mix(in srgb, var(--treasury-emerald) 5%, transparent), transparent 34%),
+      linear-gradient(145deg, var(--treasury-surface), var(--treasury-surface-warm));
+  }
+}
+
 @keyframes treasury-spin { to { transform: rotate(360deg); } }
 @keyframes treasury-wave { from { transform: translateX(-2.5%) rotate(-1deg) scaleY(0.82); } to { transform: translateX(2.5%) rotate(1deg) scaleY(1.08); } }
 @keyframes treasury-wave-back { from { transform: translateX(3%) rotate(1.5deg); } to { transform: translateX(-3%) rotate(-1.5deg); } }
