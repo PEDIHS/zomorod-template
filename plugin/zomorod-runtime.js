@@ -159,8 +159,7 @@
     const secondaryChanged = secondary !== THEME_DEFAULTS.secondary;
     let style = document.getElementById(THEME_STYLE_ID);
 
-    // No customization means no CSS override at all, preserving the exact
-    // upstream Zomorod palette byte-for-byte.
+    // Keep the stock palette untouched when the user has not customized it.
     if (!primaryChanged && !secondaryChanged) {
       style?.remove();
       return;
@@ -175,55 +174,102 @@
     const light = [];
     const dark = [];
 
-    if (primaryChanged) {
-      const darkPrimary = mixHex(primary, '#FFFFFF', 0.18);
-      const primaryBright = mixHex(primary, '#FFFFFF', 0.28);
-      const darkPrimaryBright = mixHex(primary, '#FFFFFF', 0.4);
-      light.push(
-        `--primary:${primary}`,
-        `--primary-soft:${rgbaHex(primary,.12)}`,
-        `--primary-foreground:${contrastText(primary)}`,
-        `--ring:${primary}`,
-        `--treasury-gold:${primary}`,
-        `--treasury-gold-bright:${primaryBright}`,
-        `--treasury-gold-foreground:${contrastText(primary)}`,
-      );
-      dark.push(
-        `--primary:${darkPrimary}`,
-        `--primary-soft:${rgbaHex(darkPrimary,.14)}`,
-        `--primary-foreground:${contrastText(darkPrimary)}`,
-        `--ring:${darkPrimary}`,
-        `--treasury-gold:${primary}`,
-        `--treasury-gold-bright:${darkPrimaryBright}`,
-        `--treasury-gold-foreground:${contrastText(primary)}`,
-      );
-    }
+    const darkPrimary = mixHex(primary, '#FFFFFF', 0.18);
+    const primaryBright = mixHex(primary, '#FFFFFF', 0.28);
+    const darkPrimaryBright = mixHex(primary, '#FFFFFF', 0.4);
+    const darkSecondary = mixHex(secondary, '#FFFFFF', 0.12);
+    const secondaryDeep = mixHex(secondary, '#000000', 0.28);
+    const secondaryBright = mixHex(secondary, '#FFFFFF', 0.12);
+    const darkSecondaryBright = mixHex(secondary, '#FFFFFF', 0.24);
 
-    if (secondaryChanged) {
-      const darkSecondary = mixHex(secondary, '#FFFFFF', 0.12);
-      const secondaryDeep = mixHex(secondary, '#000000', 0.28);
-      const secondaryBright = mixHex(secondary, '#FFFFFF', 0.12);
-      const darkSecondaryBright = mixHex(secondary, '#FFFFFF', 0.24);
-      light.push(
-        `--secondary:${secondary}`,
-        `--secondary-foreground:${contrastText(secondary)}`,
-        `--treasury-emerald:${secondary}`,
-        `--treasury-emerald-deep:${secondaryDeep}`,
-        `--treasury-emerald-bright:${secondaryBright}`,
-        `--treasury-emerald-foreground:${contrastText(secondary)}`,
-      );
-      dark.push(
-        `--secondary:${darkSecondary}`,
-        `--secondary-foreground:${contrastText(darkSecondary)}`,
-        `--treasury-emerald:${secondary}`,
-        `--treasury-emerald-deep:${secondaryDeep}`,
-        `--treasury-emerald-bright:${darkSecondaryBright}`,
-        `--treasury-emerald-foreground:${contrastText(secondary)}`,
-      );
-    }
+    // Once a custom theme is active, recolor the neutral canvas too. Previously
+    // these variables stayed on the original green-tinted defaults, which left a
+    // visible emerald haze behind blue/violet/custom palettes.
+    const surfaceSeed = secondaryChanged ? secondary : primary;
+    const lightBackground = mixHex(surfaceSeed, '#FFFFFF', 0.965);
+    const lightCardSolid = mixHex(surfaceSeed, '#FFFFFF', 0.986);
+    const lightMuted = mixHex(surfaceSeed, '#FFFFFF', 0.915);
+    const lightAccent = mixHex(primary, '#FFFFFF', 0.92);
+    const lightForeground = mixHex(surfaceSeed, '#121716', 0.9);
+
+    const darkBackground = mixHex(surfaceSeed, '#050708', 0.84);
+    const darkCardSolid = mixHex(surfaceSeed, '#111416', 0.76);
+    const darkMuted = mixHex(surfaceSeed, '#1A1E20', 0.72);
+    const darkAccent = mixHex(primary, '#20242A', 0.76);
+    const darkForeground = mixHex(primary, '#F3F6F5', 0.965);
+
+    light.push(
+      `--background:${lightBackground}`,
+      `--foreground:${lightForeground}`,
+      `--card:${rgbaHex(lightCardSolid,.94)}`,
+      `--card-solid:${lightCardSolid}`,
+      `--card-foreground:${lightForeground}`,
+      `--popover:${rgbaHex(lightCardSolid,.96)}`,
+      `--popover-foreground:${lightForeground}`,
+      `--muted:${lightMuted}`,
+      `--muted-foreground:${mixHex(lightForeground, '#FFFFFF', 0.46)}`,
+      `--accent:${lightAccent}`,
+      `--accent-foreground:${lightForeground}`,
+      `--border:${rgbaHex(surfaceSeed,.15)}`,
+      `--input:${rgbaHex(surfaceSeed,.09)}`,
+      `--separator:${rgbaHex(surfaceSeed,.12)}`,
+      `--material:${rgbaHex(lightBackground,.82)}`,
+      `--material-strong:${rgbaHex(lightCardSolid,.92)}`,
+      `--shadow:0 1px 2px rgba(8,12,14,.04),0 12px 34px ${rgbaHex(surfaceSeed,.08)}`,
+      `--shadow-raised:0 2px 4px rgba(8,12,14,.06),0 22px 54px ${rgbaHex(surfaceSeed,.12)}`,
+      `--primary:${primary}`,
+      `--primary-soft:${rgbaHex(primary,.12)}`,
+      `--primary-foreground:${contrastText(primary)}`,
+      `--ring:${primary}`,
+      `--secondary:${secondary}`,
+      `--secondary-foreground:${contrastText(secondary)}`,
+      `--treasury-gold:${primary}`,
+      `--treasury-gold-bright:${primaryBright}`,
+      `--treasury-gold-foreground:${contrastText(primary)}`,
+      `--treasury-emerald:${secondary}`,
+      `--treasury-emerald-deep:${secondaryDeep}`,
+      `--treasury-emerald-bright:${secondaryBright}`,
+      `--treasury-emerald-foreground:${contrastText(secondary)}`,
+    );
+
+    dark.push(
+      `--background:${darkBackground}`,
+      `--foreground:${darkForeground}`,
+      `--card:${rgbaHex(darkCardSolid,.91)}`,
+      `--card-solid:${darkCardSolid}`,
+      `--card-foreground:${darkForeground}`,
+      `--popover:${rgbaHex(darkCardSolid,.96)}`,
+      `--popover-foreground:${darkForeground}`,
+      `--muted:${darkMuted}`,
+      `--muted-foreground:${mixHex(darkForeground, '#000000', 0.36)}`,
+      `--accent:${darkAccent}`,
+      `--accent-foreground:${darkForeground}`,
+      `--border:${rgbaHex(mixHex(surfaceSeed, '#FFFFFF', .28),.16)}`,
+      `--input:${rgbaHex(mixHex(surfaceSeed, '#FFFFFF', .32),.10)}`,
+      `--separator:${rgbaHex(mixHex(surfaceSeed, '#FFFFFF', .24),.13)}`,
+      `--material:${rgbaHex(darkBackground,.80)}`,
+      `--material-strong:${rgbaHex(darkCardSolid,.93)}`,
+      `--shadow:0 1px 2px rgba(0,0,0,.22),0 16px 42px rgba(0,0,0,.26)`,
+      `--shadow-raised:0 2px 4px rgba(0,0,0,.28),0 26px 64px rgba(0,0,0,.34)`,
+      `--primary:${darkPrimary}`,
+      `--primary-soft:${rgbaHex(darkPrimary,.14)}`,
+      `--primary-foreground:${contrastText(darkPrimary)}`,
+      `--ring:${darkPrimary}`,
+      `--secondary:${darkSecondary}`,
+      `--secondary-foreground:${contrastText(darkSecondary)}`,
+      `--treasury-gold:${primary}`,
+      `--treasury-gold-bright:${darkPrimaryBright}`,
+      `--treasury-gold-foreground:${contrastText(primary)}`,
+      `--treasury-emerald:${secondary}`,
+      `--treasury-emerald-deep:${secondaryDeep}`,
+      `--treasury-emerald-bright:${darkSecondaryBright}`,
+      `--treasury-emerald-foreground:${contrastText(secondary)}`,
+    );
 
     style.textContent = `
+      :root{${light.join(';')}}
       .treasury-shell{${light.join(';')}}
+      .dark{${dark.join(';')}}
       .dark .treasury-shell{${dark.join(';')}}`;
   };
 
