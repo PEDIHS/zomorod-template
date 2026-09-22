@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.8.1';
+  const VERSION = '4.9.0';
   const HEADER_PREFIX = 'x-zomorod-';
   const NAV_ID = 'zomorod-special-nav';
   const ROOT_ID = 'zomorod-special-root';
@@ -24,6 +24,14 @@
   let accessAllowed = false;
   let isOwner = false;
   let currentAdmin = null;
+
+  const THEME_PRESETS = [
+    { id: 'emerald', label: 'زمرد سلطنتی', primary: '#C9992D', secondary: '#064C38' },
+    { id: 'ocean', label: 'اقیانوس', primary: '#4EA7FF', secondary: '#0A3152' },
+    { id: 'violet', label: 'بنفش لوکس', primary: '#C895FF', secondary: '#44206B' },
+    { id: 'copper', label: 'مسی مدرن', primary: '#E49A58', secondary: '#27313A' },
+    { id: 'aqua', label: 'فیروزه شب', primary: '#53E0BD', secondary: '#123B46' },
+  ];
 
   const defaults = {
     storeName: 'زمرد',
@@ -117,29 +125,43 @@
     #${ROOT_ID} .z-admin-status{grid-column:1/-1;font-size:.66rem;color:hsl(var(--muted-foreground))}
     #${ROOT_ID} .z-admin-status.ok{color:#059669}#${ROOT_ID} .z-admin-status.err{color:#dc2626}
 
-    #${ROOT_ID} .z-appearance-card{border-color:color-mix(in srgb,#059669 22%,hsl(var(--border)));background:linear-gradient(145deg,hsl(var(--card)),color-mix(in srgb,hsl(var(--card)) 94%,#059669 6%))}
-    #${ROOT_ID} .z-theme-preview{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.75rem;align-items:center;min-height:78px;margin-bottom:.9rem;border:1px solid hsl(var(--border));border-radius:.85rem;padding:.75rem;background:linear-gradient(135deg,color-mix(in srgb,var(--z-preview-secondary) 12%,hsl(var(--background))),color-mix(in srgb,var(--z-preview-primary) 11%,hsl(var(--background))))}
-    #${ROOT_ID} .z-theme-preview-main{display:flex;align-items:center;gap:.65rem;min-width:0}
-    #${ROOT_ID} .z-theme-preview-logo{width:42px;height:42px;flex:none;border-radius:13px;background:linear-gradient(145deg,var(--z-preview-secondary),color-mix(in srgb,var(--z-preview-secondary) 66%,#000));box-shadow:inset 0 0 0 1px rgba(255,255,255,.16),0 8px 20px color-mix(in srgb,var(--z-preview-secondary) 22%,transparent)}
-    #${ROOT_ID} .z-theme-preview-text strong{display:block;font-size:.78rem}#${ROOT_ID} .z-theme-preview-text span{display:block;margin-top:.16rem;color:hsl(var(--muted-foreground));font-size:.64rem}
-    #${ROOT_ID} .z-theme-preview-btn{border:0;border-radius:999px;padding:.5rem .7rem;color:#fff;background:var(--z-preview-primary);font:inherit;font-size:.67rem;font-weight:800;box-shadow:0 5px 14px color-mix(in srgb,var(--z-preview-primary) 24%,transparent)}
+    #${ROOT_ID} .z-appearance-card{border-color:color-mix(in srgb,#059669 22%,hsl(var(--border)));background:linear-gradient(145deg,color-mix(in srgb,hsl(var(--card)) 94%,#059669 6%),color-mix(in srgb,hsl(var(--card)) 95%,#c9992d 5%));box-shadow:0 18px 48px rgba(0,0,0,.07)}
+    #${ROOT_ID} .z-theme-preview{position:relative;isolation:isolate;overflow:hidden;min-height:210px;margin-bottom:.9rem;border:1px solid color-mix(in srgb,var(--z-preview-primary) 24%,hsl(var(--border)));border-radius:1.1rem;padding:.75rem;background:radial-gradient(circle at 86% 10%,color-mix(in srgb,var(--z-preview-primary) 24%,transparent),transparent 34%),radial-gradient(circle at 10% 90%,color-mix(in srgb,var(--z-preview-secondary) 22%,transparent),transparent 38%),linear-gradient(145deg,color-mix(in srgb,var(--z-preview-secondary) 15%,hsl(var(--background))),color-mix(in srgb,var(--z-preview-primary) 9%,hsl(var(--background))));box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 12px 32px color-mix(in srgb,var(--z-preview-secondary) 12%,transparent)}
+    #${ROOT_ID} .z-theme-preview:before{content:"";position:absolute;inset:-60% -20%;z-index:-1;background:linear-gradient(115deg,transparent 42%,rgba(255,255,255,.12) 50%,transparent 58%);transform:rotate(7deg);pointer-events:none}
+    #${ROOT_ID} .z-preview-nav{display:flex;align-items:center;justify-content:space-between;gap:.6rem;margin-bottom:.65rem}
+    #${ROOT_ID} .z-theme-preview-main{display:flex;align-items:center;gap:.55rem;min-width:0}
+    #${ROOT_ID} .z-theme-preview-logo{width:36px;height:36px;flex:none;border:1px solid color-mix(in srgb,var(--z-preview-primary) 48%,transparent);border-radius:12px;background:linear-gradient(145deg,color-mix(in srgb,var(--z-preview-secondary) 88%,#fff 12%),color-mix(in srgb,var(--z-preview-secondary) 68%,#000));box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 8px 20px color-mix(in srgb,var(--z-preview-secondary) 25%,transparent)}
+    #${ROOT_ID} .z-theme-preview-text strong{display:block;font-size:.76rem}#${ROOT_ID} .z-theme-preview-text span{display:block;margin-top:.12rem;color:hsl(var(--muted-foreground));font-size:.6rem}
+    #${ROOT_ID} .z-theme-preview-btn{border:0;border-radius:999px;padding:.45rem .65rem;color:#fff;background:linear-gradient(135deg,color-mix(in srgb,var(--z-preview-primary) 72%,#fff 28%),var(--z-preview-primary));font:inherit;font-size:.62rem;font-weight:850;box-shadow:0 7px 18px color-mix(in srgb,var(--z-preview-primary) 28%,transparent)}
+    #${ROOT_ID} .z-preview-hero{display:grid;grid-template-columns:minmax(0,1fr) 84px;align-items:center;gap:.65rem;min-height:110px;border:1px solid color-mix(in srgb,var(--z-preview-primary) 28%,transparent);border-radius:1rem 1.8rem 1.05rem 1.5rem;padding:.75rem;color:#fff;background:radial-gradient(circle at 82% 12%,color-mix(in srgb,var(--z-preview-primary) 28%,transparent),transparent 34%),linear-gradient(145deg,color-mix(in srgb,var(--z-preview-secondary) 84%,#fff 16%),color-mix(in srgb,var(--z-preview-secondary) 82%,var(--z-preview-primary) 18%) 52%,color-mix(in srgb,var(--z-preview-secondary) 68%,#000));box-shadow:0 14px 34px color-mix(in srgb,var(--z-preview-secondary) 24%,transparent),inset 0 1px 0 rgba(255,255,255,.16)}
+    #${ROOT_ID} .z-preview-hero-copy strong{display:block;font-size:.86rem}.z-preview-hero-copy span{display:block;margin-top:.18rem;font-size:.58rem;opacity:.72}
+    #${ROOT_ID} .z-preview-cta{display:inline-flex;margin-top:.52rem;border-radius:999px;padding:.33rem .55rem;color:#171b16;background:linear-gradient(135deg,color-mix(in srgb,var(--z-preview-primary) 72%,#fff 28%),var(--z-preview-primary));font-size:.56rem;font-weight:850}
+    #${ROOT_ID} .z-preview-orbit{display:grid;width:72px;height:72px;place-items:center;border:1px solid color-mix(in srgb,var(--z-preview-primary) 42%,transparent);border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--z-preview-secondary) 74%,#000) 54%,transparent 55%),conic-gradient(var(--z-preview-primary) 70%,rgba(255,255,255,.1) 0);box-shadow:0 0 0 6px color-mix(in srgb,var(--z-preview-primary) 7%,transparent),0 8px 22px rgba(0,0,0,.16)}
+    #${ROOT_ID} .z-preview-orbit strong{font-size:.86rem}
+    #${ROOT_ID} .z-preview-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.45rem;margin-top:.55rem}
+    #${ROOT_ID} .z-preview-card{height:34px;border:1px solid color-mix(in srgb,var(--z-preview-secondary) 18%,hsl(var(--border)));border-radius:.65rem;background:linear-gradient(145deg,color-mix(in srgb,hsl(var(--card)) 94%,var(--z-preview-secondary) 6%),color-mix(in srgb,hsl(var(--card)) 96%,var(--z-preview-primary) 4%));box-shadow:0 5px 14px rgba(0,0,0,.05)}
+    #${ROOT_ID} .z-preset-wrap{margin:.2rem 0 .9rem}#${ROOT_ID} .z-preset-title{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.5rem;font-size:.68rem;font-weight:800}#${ROOT_ID} .z-preset-title span:last-child{color:hsl(var(--muted-foreground));font-size:.6rem;font-weight:600}
+    #${ROOT_ID} .z-presets{display:flex;gap:.45rem;overflow-x:auto;padding:.08rem .03rem .22rem;scrollbar-width:thin}
+    #${ROOT_ID} .z-preset{display:flex;min-width:116px;align-items:center;gap:.45rem;border:1px solid hsl(var(--border));border-radius:.78rem;padding:.48rem .55rem;color:hsl(var(--foreground));background:hsl(var(--background)/.58);font:inherit;font-size:.62rem;font-weight:760;cursor:pointer;transition:transform .15s,border-color .15s,box-shadow .15s}
+    #${ROOT_ID} .z-preset:hover{transform:translateY(-1px);border-color:color-mix(in srgb,var(--preset-a) 38%,hsl(var(--border)));box-shadow:0 7px 18px color-mix(in srgb,var(--preset-b) 10%,transparent)}
+    #${ROOT_ID} .z-preset-dots{display:flex;flex:none}#${ROOT_ID} .z-preset-dots i{width:18px;height:18px;border:2px solid hsl(var(--background));border-radius:50%;box-shadow:0 0 0 1px hsl(var(--border))}#${ROOT_ID} .z-preset-dots i+i{margin-right:-7px}
     #${ROOT_ID} .z-color-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem}
-    #${ROOT_ID} .z-color-card{min-width:0;border:1px solid hsl(var(--border));border-radius:.9rem;padding:.7rem;background:hsl(var(--background)/.44)}
+    #${ROOT_ID} .z-color-card{min-width:0;border:1px solid hsl(var(--border));border-radius:1rem;padding:.75rem;background:linear-gradient(155deg,hsl(var(--background)/.68),hsl(var(--card)/.72));box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
     #${ROOT_ID} .z-color-title{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.55rem;font-size:.74rem;font-weight:800}
-    #${ROOT_ID} .z-color-swatch{width:24px;height:24px;flex:none;border:2px solid rgba(255,255,255,.72);border-radius:50%;box-shadow:0 0 0 1px hsl(var(--border)),0 3px 9px rgba(0,0,0,.12)}
-    #${ROOT_ID} .z-color-plane{position:relative;height:156px;overflow:hidden;border:1px solid hsl(var(--border));border-radius:.72rem;cursor:crosshair;touch-action:none;background:linear-gradient(to top,#000,transparent),linear-gradient(to right,#fff,var(--picker-hue,#f00))}
-    #${ROOT_ID} .z-color-cursor{position:absolute;width:16px;height:16px;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,.65),0 2px 5px rgba(0,0,0,.35);transform:translate(-50%,-50%);pointer-events:none}
-    #${ROOT_ID} .z-color-hue{appearance:none;width:100%;height:14px;margin:.62rem 0 .5rem;border:1px solid hsl(var(--border));border-radius:999px;outline:none;cursor:pointer;background:linear-gradient(90deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)}
-    #${ROOT_ID} .z-color-hue::-webkit-slider-thumb{appearance:none;width:20px;height:20px;border:2px solid #fff;border-radius:50%;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.28),0 2px 6px rgba(0,0,0,.2)}
-    #${ROOT_ID} .z-color-hue::-moz-range-thumb{width:18px;height:18px;border:2px solid #fff;border-radius:50%;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.28)}
+    #${ROOT_ID} .z-color-swatch{width:26px;height:26px;flex:none;border:2px solid rgba(255,255,255,.72);border-radius:50%;box-shadow:0 0 0 1px hsl(var(--border)),0 4px 12px rgba(0,0,0,.14)}
+    #${ROOT_ID} .z-color-plane{position:relative;height:170px;overflow:hidden;border:1px solid hsl(var(--border));border-radius:.82rem;cursor:crosshair;touch-action:none;background:linear-gradient(to top,#000,transparent),linear-gradient(to right,#fff,var(--picker-hue,#f00));box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}
+    #${ROOT_ID} .z-color-cursor{position:absolute;width:18px;height:18px;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,.65),0 3px 7px rgba(0,0,0,.4);transform:translate(-50%,-50%);pointer-events:none}
+    #${ROOT_ID} .z-color-hue{appearance:none;width:100%;height:15px;margin:.68rem 0 .55rem;border:1px solid hsl(var(--border));border-radius:999px;outline:none;cursor:pointer;background:linear-gradient(90deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)}
+    #${ROOT_ID} .z-color-hue::-webkit-slider-thumb{appearance:none;width:21px;height:21px;border:2px solid #fff;border-radius:50%;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.28),0 3px 7px rgba(0,0,0,.22)}
+    #${ROOT_ID} .z-color-hue::-moz-range-thumb{width:19px;height:19px;border:2px solid #fff;border-radius:50%;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.28)}
     #${ROOT_ID} .z-color-hex{width:100%!important;text-transform:uppercase;font-family:ui-monospace,SFMono-Regular,Menlo,monospace!important;text-align:center;direction:ltr}
-    #${ROOT_ID} .z-appearance-actions{display:flex;align-items:center;justify-content:space-between;gap:.65rem;flex-wrap:wrap;margin-top:.85rem}
+    #${ROOT_ID} .z-appearance-actions{display:flex;align-items:center;justify-content:space-between;gap:.65rem;flex-wrap:wrap;margin-top:.95rem;padding-top:.75rem;border-top:1px solid hsl(var(--border))}
     #${ROOT_ID} .z-appearance-buttons{display:flex;gap:.45rem;flex-wrap:wrap}
-    #${ROOT_ID} .z-appearance-apply{border:0;border-radius:var(--radius,.5rem);padding:.58rem .78rem;color:#fff;background:linear-gradient(135deg,#047857,#065f46);font:inherit;font-size:.7rem;font-weight:850;cursor:pointer}
-    #${ROOT_ID} .z-appearance-reset{border:1px solid hsl(var(--border));border-radius:var(--radius,.5rem);padding:.56rem .72rem;color:hsl(var(--foreground));background:hsl(var(--background));font:inherit;font-size:.68rem;font-weight:760;cursor:pointer}
+    #${ROOT_ID} .z-appearance-apply{border:0;border-radius:.72rem;padding:.62rem .86rem;color:#fff;background:linear-gradient(135deg,#047857,#065f46 62%,#9a6a17);box-shadow:0 8px 20px rgba(6,95,70,.16);font:inherit;font-size:.7rem;font-weight:850;cursor:pointer}
+    #${ROOT_ID} .z-appearance-reset{border:1px solid hsl(var(--border));border-radius:.72rem;padding:.6rem .78rem;color:hsl(var(--foreground));background:hsl(var(--background));font:inherit;font-size:.68rem;font-weight:760;cursor:pointer}
     #${ROOT_ID} .z-appearance-apply:disabled,#${ROOT_ID} .z-appearance-reset:disabled{opacity:.55;cursor:wait}
     #${ROOT_ID} .z-appearance-status{font-size:.66rem;color:hsl(var(--muted-foreground))}#${ROOT_ID} .z-appearance-status.ok{color:#059669}#${ROOT_ID} .z-appearance-status.err{color:#dc2626}
-    @media(max-width:760px){#${ROOT_ID} .z-color-grid{grid-template-columns:1fr}#${ROOT_ID} .z-color-plane{height:145px}}
+    @media(max-width:760px){#${ROOT_ID} .z-color-grid{grid-template-columns:1fr}#${ROOT_ID} .z-color-plane{height:150px}#${ROOT_ID} .z-theme-preview{min-height:190px}#${ROOT_ID} .z-preview-hero{grid-template-columns:minmax(0,1fr) 70px}#${ROOT_ID} .z-preview-orbit{width:62px;height:62px}}
     @media(max-width:900px){#${ROOT_ID} .z-admin-card{grid-template-columns:1fr 1fr}#${ROOT_ID} .z-admin-meta,#${ROOT_ID} .z-admin-card .z-admin-save{grid-column:1/-1}}
     #${ROOT_ID} .z-update-card{border-color:rgba(184,134,11,.26);background:linear-gradient(135deg,rgba(16,185,129,.055),rgba(184,134,11,.075))}
     #${ROOT_ID} .z-update-row{display:flex;align-items:center;justify-content:space-between;gap:.8rem;flex-wrap:wrap}
@@ -666,20 +688,36 @@
   function appearanceSection(cfg) {
     const primary = normalizeHex(cfg.themePrimary, defaults.themePrimary);
     const secondary = normalizeHex(cfg.themeSecondary, defaults.themeSecondary);
+    const presets = THEME_PRESETS.map((preset) => `
+      <button type="button" class="z-preset" data-theme-preset="${preset.id}" style="--preset-a:${preset.primary};--preset-b:${preset.secondary}">
+        <span class="z-preset-dots"><i style="background:${preset.primary}"></i><i style="background:${preset.secondary}"></i></span>
+        <span>${escapeHtml(preset.label)}</span>
+      </button>`).join('');
     return `
       <section class="z-card z-appearance-card">
-        <div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.palette}</span>ظاهر و رنگ‌بندی</h3><div class="z-card-note">فقط دو رنگ برند و کنترل‌های اصلی تغییر می‌کنند؛ رنگ خطا، موفقیت، هشدار، اطلاعات و پس‌زمینه ثابت می‌مانند.</div></div><span class="z-native">APPEARANCE</span></div>
+        <div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.palette}</span>استودیوی ظاهر و رنگ‌بندی</h3><div class="z-card-note">دو رنگ برند، کل هویت تمپلیت را می‌سازند: Hero، کارت‌ها، سطوح شیشه‌ای، نور محیط، Border، دکمه‌ها و حالت روشن/تیره به‌صورت هماهنگ تغییر می‌کنند؛ رنگ‌های معنایی مثل خطا و موفقیت مستقل می‌مانند.</div></div><span class="z-native">THEME STUDIO</span></div>
         <div id="z-theme-preview" class="z-theme-preview" style="--z-preview-primary:${primary};--z-preview-secondary:${secondary}">
-          <div class="z-theme-preview-main"><span class="z-theme-preview-logo"></span><div class="z-theme-preview-text"><strong>پیش‌نمایش تم</strong><span>رنگ‌ها را با Drag انتخاب کنید و سپس تأیید کنید.</span></div></div>
-          <button class="z-theme-preview-btn" type="button" tabindex="-1">Primary</button>
+          <div class="z-preview-nav">
+            <div class="z-theme-preview-main"><span class="z-theme-preview-logo"></span><div class="z-theme-preview-text"><strong>پیش‌نمایش زنده تمپلیت</strong><span>قبل از ذخیره، ترکیب رنگ و عمق بصری را همین‌جا ببینید.</span></div></div>
+            <button class="z-theme-preview-btn" type="button" tabindex="-1">اتصال سریع</button>
+          </div>
+          <div class="z-preview-hero">
+            <div class="z-preview-hero-copy"><strong>اشتراک من</strong><span>هویت برند و لایه‌های تم هماهنگ می‌شوند</span><b class="z-preview-cta">فعال و متصل</b></div>
+            <div class="z-preview-orbit"><strong>72%</strong></div>
+          </div>
+          <div class="z-preview-cards"><span class="z-preview-card"></span><span class="z-preview-card"></span><span class="z-preview-card"></span></div>
+        </div>
+        <div class="z-preset-wrap">
+          <div class="z-preset-title"><span>پالت‌های آماده حرفه‌ای</span><span>برای شروع سریع</span></div>
+          <div class="z-presets">${presets}</div>
         </div>
         <div class="z-color-grid">
-          ${colorPickerMarkup('primary', 'رنگ اصلی', 'دکمه‌ها، Ring و Accent اصلی رابط', primary)}
-          ${colorPickerMarkup('secondary', 'رنگ مکمل', 'برند، آیکن‌ها و Accent مکمل', secondary)}
+          ${colorPickerMarkup('primary', 'رنگ برجسته', 'CTA، حلقه‌ها، هایلایت و نور اصلی', primary)}
+          ${colorPickerMarkup('secondary', 'رنگ پایه برند', 'Hero، سطوح، آیکن‌ها و عمق بصری', secondary)}
         </div>
         <div class="z-appearance-actions">
-          <span id="z-appearance-status" class="z-appearance-status">تغییر رنگ تا زمان تأیید فقط در پیش‌نمایش است.</span>
-          <div class="z-appearance-buttons"><button id="z-theme-reset" class="z-appearance-reset" type="button">بازگشت به پیش‌فرض</button><button id="z-theme-apply" class="z-appearance-apply" type="button">تأیید و اعمال رنگ‌ها</button></div>
+          <span id="z-appearance-status" class="z-appearance-status">تغییرها تا زمان تأیید فقط در پیش‌نمایش هستند.</span>
+          <div class="z-appearance-buttons"><button id="z-theme-reset" class="z-appearance-reset" type="button">پیش‌فرض زمرد</button><button id="z-theme-apply" class="z-appearance-apply" type="button">ذخیره و اعمال تم</button></div>
         </div>
       </section>`;
   }
@@ -764,6 +802,24 @@
         if (status) { status.className = 'z-appearance-status err'; status.textContent = 'HEX نامعتبر است؛ نمونه صحیح: #C9992D'; }
       });
       paint();
+    });
+
+    root.querySelectorAll('[data-theme-preset]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const preset = THEME_PRESETS.find((item) => item.id === button.getAttribute('data-theme-preset'));
+        if (!preset) return;
+        const primary = rgbToHsv(hexToRgb(preset.primary));
+        const secondary = rgbToHsv(hexToRgb(preset.secondary));
+        themePickerState.primary = { ...primary, hex: preset.primary };
+        themePickerState.secondary = { ...secondary, hex: preset.secondary };
+        paintThemePicker(root, 'primary');
+        paintThemePicker(root, 'secondary');
+        const status = root.querySelector('#z-appearance-status');
+        if (status) {
+          status.className = 'z-appearance-status';
+          status.textContent = `پالت «${preset.label}» در پیش‌نمایش فعال شد؛ برای ثبت، ذخیره و اعمال تم را بزنید.`;
+        }
+      });
     });
 
     const persist = async (reset = false) => {
