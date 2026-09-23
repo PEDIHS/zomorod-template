@@ -37,8 +37,7 @@ export default defineConfig({
       'react-dom',
       'react-i18next',
       'i18next',
-      'swr',
-      'recharts'
+      'swr'
     ]
   },
   // Performance improvements
