@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.9.0';
+  const VERSION = '4.9.1';
   const HEADER_PREFIX = 'x-zomorod-';
   const NAV_ID = 'zomorod-special-nav';
   const ROOT_ID = 'zomorod-special-root';
@@ -18,6 +18,7 @@
   let cachedUpdate = null;
   let updatePollTimer = null;
   const UPDATE_NOTICE_ID = 'zomorod-update-notice';
+  const UPDATE_DISMISS_PREFIX = 'zomorod-update-dismissed:';
   let maintainQueued = false;
   let uiObserver = null;
   let accessResolved = false;
@@ -168,9 +169,13 @@
     #${ROOT_ID} .z-update-sha{direction:ltr;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.66rem;color:hsl(var(--muted-foreground))}
     #${ROOT_ID} .z-update-btn{border:0;border-radius:var(--radius,.5rem);padding:.62rem .92rem;font:inherit;font-size:.74rem;font-weight:850;color:#fff;background:linear-gradient(135deg,#047857,#065f46 65%,#9a6a17);cursor:pointer}
     #${ROOT_ID} .z-update-btn:disabled{opacity:.55;cursor:wait}
-    #${UPDATE_NOTICE_ID}{position:fixed;z-index:2147482000;top:12px;left:50%;transform:translateX(-50%);width:min(560px,calc(100vw - 24px));direction:rtl;border:1px solid rgba(184,134,11,.34);border-radius:14px;background:hsl(var(--background));color:hsl(var(--foreground));box-shadow:0 12px 40px rgba(0,0,0,.16);padding:.72rem .8rem;display:flex;align-items:center;justify-content:space-between;gap:.7rem;font-family:inherit}
-    #${UPDATE_NOTICE_ID} .z-un-text{font-size:.73rem;line-height:1.65}#${UPDATE_NOTICE_ID} .z-un-text strong{display:block;font-size:.78rem}
-    #${UPDATE_NOTICE_ID} button{border:0;border-radius:9px;padding:.48rem .65rem;background:#047857;color:white;font:inherit;font-size:.68rem;font-weight:800;white-space:nowrap;cursor:pointer}
+    #${UPDATE_NOTICE_ID}{position:fixed;z-index:2147482000;top:12px;left:50%;transform:translateX(-50%);width:min(590px,calc(100vw - 24px));direction:rtl;border:1px solid rgba(184,134,11,.34);border-radius:16px;background:hsl(var(--background));color:hsl(var(--foreground));box-shadow:0 14px 44px rgba(0,0,0,.18);padding:.72rem .76rem;display:flex;align-items:center;justify-content:space-between;gap:.7rem;font-family:inherit}
+    #${UPDATE_NOTICE_ID} .z-un-text{min-width:0;flex:1;font-size:.73rem;line-height:1.65}#${UPDATE_NOTICE_ID} .z-un-text strong{display:block;font-size:.79rem}
+    #${UPDATE_NOTICE_ID} .z-un-actions{display:flex;flex:none;align-items:center;gap:.38rem}
+    #${UPDATE_NOTICE_ID} .z-un-open{border:0;border-radius:9px;padding:.48rem .65rem;background:#047857;color:white;font:inherit;font-size:.68rem;font-weight:800;white-space:nowrap;cursor:pointer}
+    #${UPDATE_NOTICE_ID} .z-un-close{display:grid;width:34px;height:34px;place-items:center;border:1px solid hsl(var(--border));border-radius:10px;padding:0;background:hsl(var(--muted)/.65);color:hsl(var(--foreground));font:inherit;font-size:1.05rem;line-height:1;cursor:pointer;transition:background .15s,transform .15s}
+    #${UPDATE_NOTICE_ID} .z-un-close:hover{background:hsl(var(--muted));transform:scale(1.04)}
+    @media(max-width:560px){#${UPDATE_NOTICE_ID}{align-items:flex-start;padding:.68rem}.z-un-actions{align-self:center}#${UPDATE_NOTICE_ID} .z-un-open{display:none}}
   `;
 
   if (!document.getElementById('zomorod-special-style')) {
@@ -455,12 +460,24 @@
 
   function shortSha(value) { return typeof value === 'string' && value.length >= 8 ? value.slice(0, 8) : 'unknown'; }
   function removeUpdateNotice() { document.getElementById(UPDATE_NOTICE_ID)?.remove(); }
+  function updateDismissKey() {
+    const version = String(cachedUpdate?.latest_sha || cachedUpdate?.latest_version || 'unknown');
+    return `${UPDATE_DISMISS_PREFIX}${version}`;
+  }
+  function isUpdateNoticeDismissed() {
+    try { return localStorage.getItem(updateDismissKey()) === '1'; } catch (_) { return false; }
+  }
+  function dismissUpdateNotice() {
+    try { localStorage.setItem(updateDismissKey(), '1'); } catch (_) {}
+    removeUpdateNotice();
+  }
   function renderUpdateNotice() {
-    if (!isOwner || !cachedUpdate?.update_available) { removeUpdateNotice(); return; }
+    if (!isOwner || !cachedUpdate?.update_available || isUpdateNoticeDismissed()) { removeUpdateNotice(); return; }
     let node = document.getElementById(UPDATE_NOTICE_ID);
     if (!node) { node = document.createElement('div'); node.id = UPDATE_NOTICE_ID; document.body.appendChild(node); }
-    node.innerHTML = `<div class="z-un-text"><strong>نسخه جدید زمرد منتشر شده</strong>از Settings → Zomorod می‌توانید بروزرسانی را مستقیم از پنل انجام دهید.</div><button type="button">باز کردن زمرد</button>`;
-    node.querySelector('button')?.addEventListener('click', () => { if (!isSettingsRoute()) { location.hash = '#/settings'; setTimeout(openPage, 350); } else openPage(); }, { once: true });
+    node.innerHTML = `<div class="z-un-text"><strong>نسخه جدید زمرد منتشر شده</strong>از Settings → Zomorod می‌توانید بروزرسانی را مستقیم از پنل انجام دهید.</div><div class="z-un-actions"><button class="z-un-open" type="button">باز کردن زمرد</button><button class="z-un-close" type="button" aria-label="بستن اعلان بروزرسانی" title="بستن">×</button></div>`;
+    node.querySelector('.z-un-open')?.addEventListener('click', () => { if (!isSettingsRoute()) { location.hash = '#/settings'; setTimeout(openPage, 350); } else openPage(); }, { once: true });
+    node.querySelector('.z-un-close')?.addEventListener('click', dismissUpdateNotice, { once: true });
   }
   async function loadUpdateStatus(refresh = false) {
     if (!isOwner) { cachedUpdate = null; removeUpdateNotice(); return null; }
