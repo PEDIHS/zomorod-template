@@ -459,6 +459,47 @@
   }
 }
 
+
+.treasury-qr-panel {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 1.4rem;
+  padding: clamp(0.65rem, 3vw, 1rem);
+  background: #fff;
+  box-shadow: var(--shadow);
+  box-sizing: border-box;
+}
+
+.treasury-qr-frame {
+  width: min(224px, 100%);
+  max-width: min(224px, calc(100vw - 72px));
+  aspect-ratio: 1 / 1;
+  min-width: 0;
+  flex: 0 1 224px;
+  overflow: hidden;
+  border-radius: 0.75rem;
+  background: #fff;
+}
+
+.treasury-qr-code {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+@media (max-width: 360px) {
+  .treasury-qr-panel { padding: 0.6rem; }
+  .treasury-qr-frame { max-width: calc(100vw - 56px); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     scroll-behavior: auto !important;
