@@ -565,6 +565,9 @@
     width: calc(100dvw - 16px) !important;
     max-width: calc(100dvw - 16px) !important;
     max-height: calc(100dvh - max(16px, env(safe-area-inset-bottom)) - 8px) !important;
+    /* Tailwind v4 translate composes with transform. Reset it only here
+       so the QR sheet is not shifted half its width/height a second time. */
+    translate: none !important;
     transform: translateX(-50%) !important;
     border-radius: 1.35rem !important;
     padding: 0.85rem !important;
