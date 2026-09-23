@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { QRCodeCanvas } from 'qrcode.react';
+import { QRCodeSVG } from 'qrcode.react';
 import { Copy, Check, ScanQrCode, AlertCircle, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -123,22 +123,18 @@ export const QRModal = memo(({ link, open, onOpenChange }: QRModalProps) => {
           )}
 
           {canGenerateQR ? (
-            <div className="flex w-full min-w-0 justify-center overflow-hidden rounded-[22px] border border-black/5 bg-white p-3 shadow-sm sm:p-4">
-              <div className="aspect-square w-full max-w-[224px] min-w-0 overflow-hidden bg-white">
-                <QRCodeCanvas
+            <div className="treasury-qr-panel">
+              <div className="treasury-qr-frame">
+                <QRCodeSVG
                   value={qrValue}
                   size={224}
                   level="L"
                   marginSize={4}
                   bgColor="#ffffff"
                   fgColor="#071c16"
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    height: 'auto',
-                    maxWidth: '100%',
-                    aspectRatio: '1 / 1',
-                  }}
+                  width="100%"
+                  height="100%"
+                  className="treasury-qr-code"
                   role="img"
                   aria-label={`${t('qr.title')} - ${link.name}`}
                 />
