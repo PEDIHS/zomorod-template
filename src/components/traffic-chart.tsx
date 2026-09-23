@@ -1,9 +1,5 @@
-"use client"
-
 import * as React from "react"
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 import { useTranslation } from "react-i18next"
-import type { TooltipProps } from "recharts"
 import { dateUtils } from "@/lib/dateFormatter"
 
 import {
@@ -12,26 +8,18 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import {
-  type ChartConfig,
-  ChartContainer,
-  ChartTooltip,
-} from "@/components/ui/chart"
 
-const chartConfig = {
-  traffic: {
-    label: "Traffic",
-    color: "var(--primary)",
-  },
-} satisfies ChartConfig
+const CHART_WIDTH = 720
+const CHART_HEIGHT = 220
+const PAD_X = 34
+const PAD_TOP = 14
+const PAD_BOTTOM = 32
 
 const formatBytes = (bytes: number) => {
-  if (bytes === 0) return "0 B"
-
+  if (!bytes || bytes <= 0) return "0 B"
   const k = 1024
   const sizes = ["B", "KB", "MB", "GB", "TB"]
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-
+  const i = Math.min(sizes.length - 1, Math.max(0, Math.floor(Math.log(bytes) / Math.log(k))))
   return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`
 }
 
@@ -42,7 +30,6 @@ const getDisplayUnit = (maxBytes: number) => {
     { label: "MB", divisor: 1024 ** 2 },
     { label: "KB", divisor: 1024 },
   ]
-
   return units.find((unit) => maxBytes >= unit.divisor) ?? { label: "B", divisor: 1 }
 }
 
@@ -59,265 +46,298 @@ interface TrafficChartProps {
   onTimeRangeChange?: (range: string) => void
 }
 
-interface FormattedDataPoint {
-  date: string
-  traffic: number
-  displayTraffic: number
-  _bytes: number
-  _period_start: string
+interface PlotPoint {
+  x: number
+  y: number
+  bytes: number
+  periodStart: string
+  value: number
 }
 
-interface CustomTrafficTooltipProps extends TooltipProps<number, string> {
-  timeRange: string
-}
-
-const CustomTrafficTooltip = React.memo(function CustomTrafficTooltip({
-  active,
-  payload,
-  timeRange,
-}: CustomTrafficTooltipProps) {
-  const { t, i18n } = useTranslation()
-
-  if (!active || !payload || !payload.length) return null
-
-  const data = payload[0].payload as FormattedDataPoint
-
-  // Format date using dateUtils
-  const d = dateUtils.toDayjs(data._period_start)
-  let formattedDate: string
-  const isShortRange = timeRange === "1h" || timeRange === "12h" || timeRange === "24h"
-
+const formatPeriodLabel = (value: string, timeRange: string, language: string) => {
+  const d = dateUtils.toDayjs(value)
+  const shortRange = timeRange === "1h" || timeRange === "12h" || timeRange === "24h"
   try {
-    if (i18n.language === 'fa') {
-      formattedDate = isShortRange
-        ? d
-          .toDate()
-          .toLocaleTimeString('fa-IR', {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
-          })
-        : d
-          .toDate()
-          .toLocaleDateString('fa-IR', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-          })
-    } else if (isShortRange) {
-      formattedDate = d
-        .format('YYYY/MM/DD HH:mm')
-    } else {
-      formattedDate = d.format('YYYY/MM/DD')
+    if (language === "fa") {
+      return shortRange
+        ? d.toDate().toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit", hour12: false })
+        : d.toDate().toLocaleDateString("fa-IR", { month: "short", day: "numeric" })
     }
+    return shortRange ? d.format("HH:mm") : d.format("MMM D")
   } catch {
-    formattedDate = isShortRange ? d.format('YYYY/MM/DD HH:mm') : d.format('YYYY/MM/DD')
+    return shortRange ? d.format("HH:mm") : d.format("MM/DD")
   }
+}
 
-  const isRTL = i18n.language === 'fa'
+const formatTooltipDate = (value: string, timeRange: string, language: string) => {
+  const d = dateUtils.toDayjs(value)
+  const shortRange = timeRange === "1h" || timeRange === "12h" || timeRange === "24h"
+  try {
+    if (language === "fa") {
+      return shortRange
+        ? d.toDate().toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit", hour12: false })
+        : d.toDate().toLocaleDateString("fa-IR", { year: "numeric", month: "2-digit", day: "2-digit" })
+    }
+    return shortRange ? d.format("YYYY/MM/DD HH:mm") : d.format("YYYY/MM/DD")
+  } catch {
+    return shortRange ? d.format("YYYY/MM/DD HH:mm") : d.format("YYYY/MM/DD")
+  }
+}
 
-  return (
-    <div
-      className={`min-w-[150px] rounded-xl border border-border bg-popover/95 p-3 text-sm shadow-xl backdrop-blur-xl ${isRTL ? 'text-right' : 'text-left'}`}
-      dir={isRTL ? 'rtl' : 'ltr'}
-    >
-      <div className={`mb-2 text-sm font-semibold text-muted-foreground ${isRTL ? 'text-right' : 'text-left'}`}>
-        <span dir="ltr" className="inline-block">
-          {formattedDate}
-        </span>
-      </div>
-      <div className={`text-base font-bold text-foreground ${isRTL ? 'text-right' : 'text-left'}`}>
-        <span>{t('usage.totalUsage')}: </span>
-        <span dir="ltr" className="inline-block font-mono">
-          {formatBytes(data._bytes)}
-        </span>
-      </div>
-    </div>
-  )
-})
+const buildSmoothPath = (points: PlotPoint[]) => {
+  if (!points.length) return ""
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`
+  let path = `M ${points[0].x} ${points[0].y}`
+  for (let i = 1; i < points.length; i += 1) {
+    const previous = points[i - 1]
+    const current = points[i]
+    const mid = (previous.x + current.x) / 2
+    path += ` C ${mid} ${previous.y}, ${mid} ${current.y}, ${current.x} ${current.y}`
+  }
+  return path
+}
 
 export const TrafficChart = React.memo(function TrafficChart({
   data,
   isLoading = false,
   error,
   timeRange = "7d",
-  onTimeRangeChange
+  onTimeRangeChange,
 }: TrafficChartProps) {
   const { t, i18n } = useTranslation()
+  const [activeIndex, setActiveIndex] = React.useState<number | null>(null)
 
   const displayUnit = React.useMemo(() => {
     const maxBytes = Math.max(...(data ?? []).map((point) => point.total_traffic), 0)
     return getDisplayUnit(maxBytes)
   }, [data])
 
-  const filteredData = React.useMemo(() => {
-    if (!data || data.length === 0) return []
+  const values = React.useMemo(
+    () => (data ?? []).map((point) => Math.max(0, point.total_traffic / displayUnit.divisor)),
+    [data, displayUnit.divisor],
+  )
+  const maxValue = Math.max(...values, 0)
+  const safeMax = maxValue > 0 ? maxValue : 1
+  const plotWidth = CHART_WIDTH - PAD_X * 2
+  const plotHeight = CHART_HEIGHT - PAD_TOP - PAD_BOTTOM
 
-    return data.map((point) => ({
-      date: point.period_start,
-      traffic: point.total_traffic / displayUnit.divisor,
-      displayTraffic: Number((point.total_traffic / displayUnit.divisor).toFixed(3)),
-      _bytes: point.total_traffic,
-      _period_start: point.period_start,
-    }))
-  }, [data, displayUnit])
-  const hasChartPoints = filteredData.length > 0
+  const points = React.useMemo<PlotPoint[]>(() => {
+    const count = Math.max(1, (data ?? []).length - 1)
+    return (data ?? []).map((point, index) => {
+      const value = Math.max(0, point.total_traffic / displayUnit.divisor)
+      return {
+        x: PAD_X + (index / count) * plotWidth,
+        y: PAD_TOP + plotHeight - (value / safeMax) * plotHeight,
+        bytes: point.total_traffic,
+        periodStart: point.period_start,
+        value,
+      }
+    })
+  }, [data, displayUnit.divisor, plotHeight, plotWidth, safeMax])
+
+  const linePath = React.useMemo(() => buildSmoothPath(points), [points])
+  const areaPath = React.useMemo(() => {
+    if (!points.length) return ""
+    const baseline = PAD_TOP + plotHeight
+    return `${linePath} L ${points[points.length - 1].x} ${baseline} L ${points[0].x} ${baseline} Z`
+  }, [linePath, plotHeight, points])
+
   const totalUsedBytes = React.useMemo(
     () => data?.reduce((sum, point) => sum + point.total_traffic, 0) ?? 0,
-    [data]
+    [data],
   )
 
   const timeRangeOptions = React.useMemo(() => ([
-    { value: '24h', label: t('timeRange.24h') || '24h' },
-    { value: '7d', label: t('timeRange.7d') || '7d' },
-    { value: '30d', label: t('timeRange.30d') || '30d' },
+    { value: "24h", label: t("timeRange.24h") || "24h" },
+    { value: "7d", label: t("timeRange.7d") || "7d" },
+    { value: "30d", label: t("timeRange.30d") || "30d" },
   ]), [t])
+
+  const xLabelIndexes = React.useMemo(() => {
+    if (points.length <= 1) return points.length ? [0] : []
+    const desired = points.length <= 5 ? points.length : 4
+    return Array.from({ length: desired }, (_, index) =>
+      Math.round((index * (points.length - 1)) / Math.max(1, desired - 1)),
+    ).filter((value, index, list) => index === 0 || value !== list[index - 1])
+  }, [points.length])
+
+  const yTicks = React.useMemo(() => [0, 0.5, 1].map((ratio) => ({
+    ratio,
+    y: PAD_TOP + plotHeight - ratio * plotHeight,
+    label: Number((safeMax * ratio).toFixed(2)).toLocaleString(undefined, { maximumFractionDigits: 2 }),
+  })), [plotHeight, safeMax])
+
+  const handlePointer = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!points.length) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    const relative = Math.max(0, Math.min(rect.width, event.clientX - rect.left))
+    const ratio = rect.width > 0 ? relative / rect.width : 0
+    const index = Math.round(ratio * (points.length - 1))
+    setActiveIndex(Math.max(0, Math.min(points.length - 1, index)))
+  }, [points.length])
+
+  const activePoint = activeIndex == null ? null : points[activeIndex]
 
   return (
     <Card className="treasury-traffic-card overflow-hidden">
       <CardHeader className="flex flex-col gap-3 space-y-0 border-b pb-4">
-        <div className="flex flex-wrap items-center justify-between w-full">
-          <CardTitle className="page-section-title">{t('usage.title')}</CardTitle>
+        <div className="flex w-full flex-wrap items-center justify-between">
+          <CardTitle className="page-section-title">{t("usage.title")}</CardTitle>
           <div className="treasury-chart-total">
-            {totalUsedBytes > 0 && (
-              <span dir="ltr">
-                {formatBytes(totalUsedBytes)}
-              </span>
-            )}
+            {totalUsedBytes > 0 && <span dir="ltr">{formatBytes(totalUsedBytes)}</span>}
             <small>{displayUnit.label}</small>
           </div>
         </div>
-        <div className="ios-segmented-control" role="group" aria-label={t('usage.title')}>
+        <div className="ios-segmented-control" role="group" aria-label={t("usage.title")}>
           {timeRangeOptions.map((option) => (
             <button
               type="button"
               key={option.value}
               onClick={() => onTimeRangeChange?.(option.value)}
               aria-pressed={timeRange === option.value}
-              className={`ios-segmented-item ${timeRange === option.value ? 'is-selected' : ''}`}
+              className={`ios-segmented-item ${timeRange === option.value ? "is-selected" : ""}`}
             >
               {option.label}
             </button>
           ))}
         </div>
       </CardHeader>
-      <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6 overflow-x-hidden">
-        {error ? (
-          <div className="h-[250px] w-full flex items-center justify-center text-destructive text-sm">
-            {error.message || t('common.error')}
-          </div>
-        ) : (
-          <div className="relative h-[250px] w-full">
-            {/* Chart Container - Always rendered to maintain DOM structure */}
-            <ChartContainer
-              config={chartConfig}
-              className="aspect-auto h-[250px] w-full max-w-full"
-            >
-              {hasChartPoints ? (
-                <AreaChart
-                  data={filteredData}
-                  margin={{ top: 10, right: 0, left: 0, bottom: 0 }}
-                >
-                  <defs>
-                    <linearGradient id="fillTraffic" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="var(--treasury-gold-bright)" stopOpacity={0.52} />
-                      <stop offset="34%" stopColor="var(--treasury-emerald-bright)" stopOpacity={0.34} />
-                      <stop offset="100%" stopColor="var(--treasury-emerald-bright)" stopOpacity={0.025} />
-                    </linearGradient>
-                    <linearGradient id="strokeTraffic" x1="0" y1="0" x2="1" y2="0">
-                      <stop offset="0%" stopColor="var(--treasury-emerald-bright)" />
-                      <stop offset="78%" stopColor="var(--treasury-emerald-bright)" />
-                      <stop offset="100%" stopColor="var(--treasury-gold-bright)" />
-                    </linearGradient>
-                    <filter id="trafficGlow" x="-30%" y="-30%" width="160%" height="160%">
-                      <feGaussianBlur stdDeviation="2.5" result="blur" />
-                      <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-                    </filter>
-                  </defs>
-                  <CartesianGrid vertical={false} stroke="var(--separator)" strokeDasharray="2 4" />
-                  <YAxis
-                    width={42}
-                    tickLine={false}
-                    axisLine={false}
-                    domain={[0, 'auto']}
-                    tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }}
-                    tickFormatter={(value) => Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                  />
-                  <XAxis
-                    dataKey="date"
-                    tickLine={false}
-                    axisLine={false}
-                    tickMargin={8}
-                    minTickGap={16}
-                    tick={{
-                      fill: 'var(--muted-foreground)',
-                      fontSize: 11
-                    }}
-                    tickFormatter={(value) => {
-                      const d = dateUtils.toDayjs(value)
-                      // For short ranges, show time
-                      if (timeRange === "1h" || timeRange === "12h" || timeRange === "24h") {
-                        if (i18n.language === 'fa') {
-                          return d.toDate().toLocaleTimeString('fa-IR', {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            hour12: false
-                          })
-                        }
-                        return d.format('HH:mm')
-                      }
-                      // For days, show date
-                      if (i18n.language === 'fa') {
-                        return d.toDate().toLocaleDateString('fa-IR', {
-                          month: "short",
-                          day: "numeric",
-                        })
-                      }
-                      return d.format('MMM D')
-                    }}
-                  />
-                  <ChartTooltip
-                    cursor={{ stroke: 'var(--treasury-gold)', strokeWidth: 1, strokeDasharray: '3 4' }}
-                    content={<CustomTrafficTooltip timeRange={timeRange} />}
-                  />
-                  <Area
-                    dataKey="displayTraffic"
-                    type="monotone"
-                    fill="url(#fillTraffic)"
-                    stroke="url(#strokeTraffic)"
-                    strokeWidth={3}
-                    filter="url(#trafficGlow)"
-                    dot={filteredData.length <= 40 ? { r: 3.5, fill: 'var(--treasury-gold-bright)', stroke: 'var(--treasury-emerald)', strokeWidth: 2 } : false}
-                    activeDot={{ r: 6, fill: 'var(--treasury-gold-bright)', stroke: 'var(--card-solid)', strokeWidth: 3 }}
-                    connectNulls
-                    isAnimationActive
-                    animationBegin={120}
-                    animationDuration={1250}
-                    animationEasing="ease-out"
-                  />
-                </AreaChart>
-              ) : !isLoading ? (
-                <div className="h-full w-full flex flex-col items-center justify-center gap-2 text-muted-foreground text-sm">
-                  <div className="w-10 h-10 rounded-full border border-dashed border-muted-foreground/40 flex items-center justify-center">
-                    <span className="text-xs">—</span>
-                  </div>
-                  <span>
-                    {t('usage.noDataInRange')}
-                  </span>
-                </div>
-              ) : (
-                <div className="h-full w-full" />
-              )}
-            </ChartContainer>
 
-            {/* Loading Overlay - Only shown when loading */}
-            {isLoading && (
-              <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-10">
-                <span className="text-muted-foreground">
-                  {t('common.loading')}
-                </span>
+      <CardContent className="overflow-x-hidden px-2 pt-4 sm:px-6 sm:pt-6">
+        {error ? (
+          <div className="flex h-[250px] w-full items-center justify-center text-sm text-destructive">
+            {error.message || t("common.error")}
+          </div>
+        ) : points.length ? (
+          <div
+            className="treasury-lite-chart relative h-[250px] w-full select-none"
+            onPointerMove={handlePointer}
+            onPointerDown={handlePointer}
+            onPointerLeave={() => setActiveIndex(null)}
+          >
+            <svg
+              viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+              className="block h-full w-full"
+              role="img"
+              aria-label={t("usage.title")}
+            >
+              <defs>
+                <linearGradient id="traffic-fill-lite" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--treasury-gold-bright)" stopOpacity="0.42" />
+                  <stop offset="42%" stopColor="var(--treasury-emerald-bright)" stopOpacity="0.2" />
+                  <stop offset="100%" stopColor="var(--treasury-emerald-bright)" stopOpacity="0.015" />
+                </linearGradient>
+                <linearGradient id="traffic-stroke-lite" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stopColor="var(--treasury-emerald-bright)" />
+                  <stop offset="76%" stopColor="var(--treasury-emerald-bright)" />
+                  <stop offset="100%" stopColor="var(--treasury-gold-bright)" />
+                </linearGradient>
+              </defs>
+
+              {yTicks.map((tick) => (
+                <g key={tick.ratio}>
+                  <line
+                    x1={PAD_X}
+                    y1={tick.y}
+                    x2={CHART_WIDTH - PAD_X}
+                    y2={tick.y}
+                    stroke="var(--separator)"
+                    strokeDasharray="3 5"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  <text
+                    x={PAD_X - 8}
+                    y={tick.y + 4}
+                    textAnchor="end"
+                    fill="var(--muted-foreground)"
+                    fontSize="10"
+                  >
+                    {tick.label}
+                  </text>
+                </g>
+              ))}
+
+              <path d={areaPath} fill="url(#traffic-fill-lite)" />
+              <path
+                d={linePath}
+                fill="none"
+                stroke="url(#traffic-stroke-lite)"
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                vectorEffect="non-scaling-stroke"
+              />
+
+              {points.length <= 40 && points.map((point, index) => (
+                <circle
+                  key={point.periodStart}
+                  cx={point.x}
+                  cy={point.y}
+                  r={activeIndex === index ? 5.2 : 2.7}
+                  fill="var(--treasury-gold-bright)"
+                  stroke="var(--card-solid)"
+                  strokeWidth={activeIndex === index ? 3 : 1.5}
+                  vectorEffect="non-scaling-stroke"
+                />
+              ))}
+
+              {activePoint && (
+                <line
+                  x1={activePoint.x}
+                  y1={PAD_TOP}
+                  x2={activePoint.x}
+                  y2={PAD_TOP + plotHeight}
+                  stroke="var(--treasury-gold)"
+                  strokeDasharray="3 4"
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
+
+              {xLabelIndexes.map((index) => {
+                const point = points[index]
+                if (!point) return null
+                return (
+                  <text
+                    key={point.periodStart}
+                    x={point.x}
+                    y={CHART_HEIGHT - 8}
+                    textAnchor={index === 0 ? "start" : index === points.length - 1 ? "end" : "middle"}
+                    fill="var(--muted-foreground)"
+                    fontSize="10"
+                  >
+                    {formatPeriodLabel(point.periodStart, timeRange, i18n.language)}
+                  </text>
+                )
+              })}
+            </svg>
+
+            {activePoint && (
+              <div
+                className="treasury-lite-tooltip"
+                style={{ left: `${(activePoint.x / CHART_WIDTH) * 100}%` }}
+                dir={i18n.language === "fa" ? "rtl" : "ltr"}
+              >
+                <strong dir="ltr">{formatBytes(activePoint.bytes)}</strong>
+                <span dir="ltr">{formatTooltipDate(activePoint.periodStart, timeRange, i18n.language)}</span>
               </div>
             )}
+
+            {isLoading && (
+              <div className="treasury-chart-loading absolute inset-0 z-10 flex items-center justify-center">
+                <span className="text-muted-foreground">{t("common.loading")}</span>
+              </div>
+            )}
+          </div>
+        ) : !isLoading ? (
+          <div className="flex h-[250px] w-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-dashed border-muted-foreground/40">
+              <span className="text-xs">—</span>
+            </div>
+            <span>{t("usage.noDataInRange")}</span>
+          </div>
+        ) : (
+          <div className="flex h-[250px] w-full items-center justify-center">
+            <span className="text-muted-foreground">{t("common.loading")}</span>
           </div>
         )}
       </CardContent>
