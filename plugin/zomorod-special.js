@@ -175,7 +175,7 @@
     #${UPDATE_NOTICE_ID} .z-un-open{border:0;border-radius:9px;padding:.48rem .65rem;background:#047857;color:white;font:inherit;font-size:.68rem;font-weight:800;white-space:nowrap;cursor:pointer}
     #${UPDATE_NOTICE_ID} .z-un-close{display:grid;width:34px;height:34px;place-items:center;border:1px solid hsl(var(--border));border-radius:10px;padding:0;background:hsl(var(--muted)/.65);color:hsl(var(--foreground));font:inherit;font-size:1.05rem;line-height:1;cursor:pointer;transition:background .15s,transform .15s}
     #${UPDATE_NOTICE_ID} .z-un-close:hover{background:hsl(var(--muted));transform:scale(1.04)}
-    @media(max-width:560px){#${UPDATE_NOTICE_ID}{align-items:flex-start;padding:.68rem}.z-un-actions{align-self:center}#${UPDATE_NOTICE_ID} .z-un-open{display:none}}
+    @media(max-width:560px){#${UPDATE_NOTICE_ID}{align-items:flex-start;padding:.68rem}#${UPDATE_NOTICE_ID} .z-un-actions{align-self:center}#${UPDATE_NOTICE_ID} .z-un-open{display:none}}
   `;
 
   if (!document.getElementById('zomorod-special-style')) {
