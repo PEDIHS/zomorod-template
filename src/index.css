@@ -500,6 +500,135 @@
   .treasury-qr-frame { max-width: calc(100vw - 56px); }
 }
 
+
+.treasury-qr-dialog {
+  width: min(420px, calc(100dvw - 24px)) !important;
+  max-width: calc(100dvw - 24px) !important;
+  max-height: calc(100dvh - 24px) !important;
+  box-sizing: border-box;
+  overflow-x: clip !important;
+  overscroll-behavior: contain;
+  contain: layout paint style;
+}
+
+.treasury-qr-frame {
+  width: min(224px, calc(100dvw - 72px), 100%);
+  max-width: 100%;
+}
+
+.treasury-lite-chart {
+  contain: layout paint;
+  touch-action: pan-y;
+}
+
+.treasury-lite-chart svg {
+  overflow: visible;
+}
+
+.treasury-lite-tooltip {
+  position: absolute;
+  top: 12px;
+  z-index: 5;
+  display: grid;
+  min-width: 112px;
+  gap: 0.15rem;
+  transform: translateX(-50%);
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  padding: 0.48rem 0.58rem;
+  background: var(--card-solid);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+
+.treasury-lite-tooltip strong {
+  color: var(--foreground);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.treasury-lite-tooltip span {
+  color: var(--muted-foreground);
+  font-size: 0.62rem;
+}
+
+.treasury-chart-loading {
+  background: color-mix(in srgb, var(--background) 88%, transparent);
+}
+
+@media (max-width: 640px) {
+  .treasury-qr-dialog {
+    top: auto !important;
+    bottom: max(8px, env(safe-area-inset-bottom)) !important;
+    left: 50% !important;
+    right: auto !important;
+    width: calc(100dvw - 16px) !important;
+    max-width: calc(100dvw - 16px) !important;
+    max-height: calc(100dvh - max(16px, env(safe-area-inset-bottom)) - 8px) !important;
+    transform: translateX(-50%) !important;
+    border-radius: 1.35rem !important;
+    padding: 0.85rem !important;
+  }
+
+  .treasury-qr-panel {
+    width: 100%;
+    max-width: 100%;
+    padding: 0.55rem;
+    border-radius: 1rem;
+  }
+
+  .treasury-qr-frame {
+    width: min(210px, calc(100dvw - 52px));
+    max-width: calc(100dvw - 52px);
+    flex-basis: auto;
+  }
+
+  /* Mobile GPU mode: preserve the design while avoiding expensive full-screen
+     blur/backdrop passes that cause visible stutter on mid-range phones. */
+  .treasury-ambient::before,
+  .treasury-ambient::after,
+  .treasury-hero-glow {
+    filter: none !important;
+    opacity: 0.42;
+  }
+
+  .treasury-navigation,
+  .treasury-metrics,
+  .treasury-reservoir,
+  .treasury-notice,
+  .treasury-detail-strip,
+  .treasury-shell [data-slot="card"],
+  .treasury-shell .ios-grouped-list,
+  .treasury-shell .ios-accordion-item,
+  .treasury-config-card,
+  [data-slot="dialog-content"],
+  [data-slot="dialog-overlay"],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="select-content"] {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .treasury-hero:not(.is-traffic-empty),
+  .treasury-subscription-card,
+  .treasury-config-card,
+  .treasury-metrics,
+  .treasury-reservoir {
+    box-shadow: 0 10px 28px color-mix(in srgb, var(--treasury-brand-shadow) 11%, transparent),
+                inset 0 1px 0 color-mix(in srgb, #fff 10%, transparent) !important;
+  }
+
+  .animate-fadeIn {
+    animation-duration: 220ms !important;
+  }
+
+  .treasury-lite-tooltip {
+    top: 8px;
+    min-width: 100px;
+    padding: 0.42rem 0.5rem;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     scroll-behavior: auto !important;

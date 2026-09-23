@@ -79,13 +79,7 @@ export const QRModal = memo(({ link, open, onOpenChange }: QRModalProps) => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="min-w-0 max-h-[calc(100dvh-24px)] overflow-y-auto overflow-x-hidden rounded-[24px] p-4 sm:p-5"
-        style={{
-          width: 'min(420px, calc(100vw - 24px))',
-          maxWidth: 'calc(100vw - 24px)',
-          boxSizing: 'border-box',
-          overflowX: 'clip',
-        }}
+        className="treasury-qr-dialog min-w-0 overflow-y-auto overflow-x-hidden p-4 sm:p-5"
         dir={dir}
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
