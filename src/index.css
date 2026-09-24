@@ -560,15 +560,18 @@
   .treasury-qr-dialog {
     top: auto !important;
     bottom: max(8px, env(safe-area-inset-bottom)) !important;
-    left: 50% !important;
-    right: auto !important;
+    left: 8px !important;
+    right: 8px !important;
     width: calc(100dvw - 16px) !important;
     max-width: calc(100dvw - 16px) !important;
     max-height: calc(100dvh - max(16px, env(safe-area-inset-bottom)) - 8px) !important;
-    /* Tailwind v4 translate composes with transform. Reset it only here
-       so the QR sheet is not shifted half its width/height a second time. */
+    /* Pin the mobile QR sheet to the viewport; do not combine two
+       independent translation mechanisms (including in Safari). */
+    --tw-translate-x: 0px !important;
+    --tw-translate-y: 0px !important;
+    --tw-translate-z: 0px !important;
     translate: none !important;
-    transform: translateX(-50%) !important;
+    transform: none !important;
     border-radius: 1.35rem !important;
     padding: 0.85rem !important;
   }
