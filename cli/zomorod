@@ -230,5 +230,3 @@ case "${1:-}" in
     ;;
   *) bad "Unknown command: $1"; usage >&2; exit 2 ;;
 esac
-
-[executed on device: pedram2 (cbf92ea2-36fe-4909-b025-f508c0a2544d)]
