@@ -157,6 +157,20 @@ head=re.search(r'<head\b[^>]*>',html,flags=re.I)
 if head: html=html[:head.end()]+'\n'+block+html[head.end():]
 elif '</head>' in html.lower(): html=re.sub(r'</head>',block+'\n</head>',html,count=1,flags=re.I)
 else: html=block+'\n'+html
+# Keep the upstream attribution footer intact, but never expose its demo brand
+# as the subscription header while Zomorod runtime settings are bootstrapping.
+brand_marker='className:"treasury-brand"'
+cursor=0
+while True:
+    brand_at=html.find(brand_marker,cursor)
+    if brand_at < 0:
+        break
+    segment_end=min(len(html),brand_at+700)
+    segment=html[brand_at:segment_end]
+    segment=re.sub(r'("aria-label":")ganj(")',r'\1زمرد\2',segment,count=1,flags=re.I)
+    segment=re.sub(r'(children:")ganj(")',r'\1زمرد\2',segment,count=1,flags=re.I)
+    html=html[:brand_at]+segment+html[segment_end:]
+    cursor=brand_at+len(segment)
 path.write_text(html,encoding="utf-8")
 PY
 }
