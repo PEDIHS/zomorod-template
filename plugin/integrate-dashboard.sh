@@ -198,7 +198,45 @@ import re, sys
 template_path=Path(sys.argv[1]); runtime_path=Path(sys.argv[2]); marker=sys.argv[3]
 original=template_path.read_text(encoding="utf-8"); runtime=runtime_path.read_text(encoding="utf-8")
 pattern=re.compile(rf'\s*<script id="{re.escape(marker)}">.*?</script>\s*',re.S)
-html=pattern.sub('',original); block=f'\n<script id="{marker}">\n{runtime}\n</script>\n'
+html=pattern.sub('',original)
+html=re.sub(r'(?i)(?<![A-Za-z0-9_])ganj(?![A-Za-z0-9_])','زمرد',html)
+html=re.sub(r'\s*<style id="zomorod-runtime-boot-style">.*?</style>\s*','\n',html,flags=re.S)
+html=re.sub(r'\s*<script id="zomorod-runtime-boot-script">.*?</script>\s*','\n',html,flags=re.S)
+boot='''<style id="zomorod-runtime-boot-style">
+html[data-zomorod-booting="1"] body>*:not(#zomorod-boot-screen):not(script):not(style){visibility:hidden!important}
+#zomorod-boot-screen{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:#f7f7f7;color:#202423}
+#zomorod-boot-screen span{width:28px;height:28px;border:2px solid rgba(40,44,43,.18);border-top-color:rgba(40,44,43,.72);border-radius:999px;animation:zomorodBootSpin .72s linear infinite}
+@keyframes zomorodBootSpin{to{transform:rotate(360deg)}}
+@media(prefers-color-scheme:dark){#zomorod-boot-screen{background:#0f1211;color:#f5f7f6}#zomorod-boot-screen span{border-color:rgba(245,247,246,.15);border-top-color:rgba(245,247,246,.76)}}
+@media(prefers-reduced-motion:reduce){#zomorod-boot-screen span{animation:none}}
+</style>
+<script id="zomorod-runtime-boot-script">
+(() => {
+  const root=document.documentElement;
+  root.setAttribute('data-zomorod-booting','1');
+  const reveal=()=>{
+    root.removeAttribute('data-zomorod-booting');
+    document.getElementById('zomorod-boot-screen')?.remove();
+    document.getElementById('zomorod-runtime-boot-style')?.remove();
+  };
+  window.__zomorodFinishBoot=reveal;
+  const mount=()=>{
+    if(document.getElementById('zomorod-boot-screen')) return;
+    const node=document.createElement('div');
+    node.id='zomorod-boot-screen';
+    node.setAttribute('aria-label','در حال بارگذاری');
+    node.innerHTML='<span aria-hidden="true"></span>';
+    document.body.appendChild(node);
+  };
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',mount,{once:true}); else mount();
+  setTimeout(reveal,9000);
+})();
+</script>'''
+head=re.search(r'<head\b[^>]*>',html,flags=re.I)
+if head: html=html[:head.end()]+'\n'+boot+html[head.end():]
+elif '</head>' in html.lower(): html=re.sub(r'</head>',boot+'\n</head>',html,count=1,flags=re.I)
+else: html=boot+'\n'+html
+block=f'\n<script id="{marker}">\n{runtime}\n</script>\n'
 html=html.replace('</body>',block+'</body>',1) if '</body>' in html else html+block
 if html!=original: template_path.write_text(html,encoding="utf-8")
 PY
