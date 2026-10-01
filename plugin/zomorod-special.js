@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.9.4';
+  const VERSION = '4.9.5';
   const HEADER_PREFIX = 'x-zomorod-';
   const NAV_ID = 'zomorod-special-nav';
   const ROOT_ID = 'zomorod-special-root';
