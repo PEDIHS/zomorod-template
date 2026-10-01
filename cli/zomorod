@@ -3,15 +3,45 @@ set -Eeuo pipefail
 
 REPO="PEDIHS/zomorod-template"
 API="https://api.github.com/repos/${REPO}/commits/main"
+ZROOT="/opt/zomorod"
+STATE_FILE="/var/lib/pasarguard/zomorod/install-state.json"
+
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+  EMERALD=$'\033[38;2;6;120;87m'
+  EMERALD_BRIGHT=$'\033[38;2;16;185;129m'
+  GOLD=$'\033[38;2;201;153;45m'
+  RED=$'\033[38;2;239;68;68m'
+  MUTED=$'\033[38;2;148;163;184m'
+  BOLD=$'\033[1m'
+  RESET=$'\033[0m'
+else
+  EMERALD=''; EMERALD_BRIGHT=''; GOLD=''; RED=''; MUTED=''; BOLD=''; RESET=''
+fi
+
+ok()   { printf '%s●%s %s\n' "$EMERALD_BRIGHT" "$RESET" "$*"; }
+warn() { printf '%s●%s %s\n' "$GOLD" "$RESET" "$*" >&2; }
+bad()  { printf '%s●%s %s\n' "$RED" "$RESET" "$*" >&2; }
+info() { printf '%s›%s %s\n' "$GOLD" "$RESET" "$*"; }
+
+banner() {
+  printf '%s%s╭──────────────────────────────────────────────╮%s\n' "$EMERALD" "$BOLD" "$RESET"
+  printf '%s%s│%s  %s◆ ZOMOROD%s  %sControl Center%s                   %s%s│%s\n' "$EMERALD" "$BOLD" "$RESET" "$GOLD" "$RESET" "$MUTED" "$RESET" "$EMERALD" "$BOLD" "$RESET"
+  printf '%s%s│%s  %sزمرد × طلایی%s                                 %s%s│%s\n' "$EMERALD" "$BOLD" "$RESET" "$EMERALD_BRIGHT" "$RESET" "$EMERALD" "$BOLD" "$RESET"
+  printf '%s%s╰──────────────────────────────────────────────╯%s\n' "$EMERALD" "$BOLD" "$RESET"
+}
 
 usage() {
-  cat <<'EOF'
-Zomorod command
+  banner
+  cat <<EOF
 
 Usage:
-  sudo zomorod update          Resolve latest main commit and apply that exact snapshot
-  zomorod version              Show locally installed plugin version
-  zomorod status               Show installed files and integration status
+  zomorod                 Interactive control panel
+  zomorod status          Show Zomorod and PasarGuard health
+  zomorod update          Update to the latest immutable main snapshot
+  zomorod restart         Safely restart PasarGuard and re-apply Zomorod
+  zomorod install         Install/repair Zomorod from latest main
+  zomorod version         Show installed Zomorod version
+  zomorod help            Show this help
 EOF
 }
 
@@ -25,64 +55,180 @@ resolve_main_sha() {
     -H 'Accept: application/vnd.github+json' \
     -H 'Cache-Control: no-cache' \
     "${API}?t=$(date +%s)")" || return 1
-  python3 -c 'import json,sys; d=json.load(sys.stdin); s=d.get("sha",""); print(s if len(s)==40 else "")' <<<"$json"
+  python3 -c 'import json,sys,re; d=json.load(sys.stdin); s=str(d.get("sha","")); print(s if re.fullmatch(r"[0-9a-f]{40}",s) else "")' <<<"$json"
+}
+
+plugin_version() {
+  local file="${ZROOT}/plugin/zomorod-special.js"
+  [[ -f "$file" ]] || return 1
+  grep -m1 "const VERSION" "$file" | sed -E "s/.*'([^']+)'.*/\1/"
+}
+
+installed_commit() {
+  [[ -s "$STATE_FILE" ]] || return 1
+  python3 - "$STATE_FILE" <<'PY'
+import json,sys
+try:
+    value=json.load(open(sys.argv[1],encoding='utf-8')).get('commit') or ''
+except Exception:
+    value=''
+print(value)
+PY
 }
 
 reactivate_persistence_guard() {
   command -v systemctl >/dev/null 2>&1 || return 0
   run_root systemctl daemon-reload >/dev/null 2>&1 || true
+  run_root systemctl enable --now zomorod-integrator.path >/dev/null 2>&1 || true
   run_root systemctl enable zomorod-integrator.timer >/dev/null 2>&1 || true
   run_root systemctl restart zomorod-integrator.timer >/dev/null 2>&1 || true
-  run_root systemctl restart zomorod-integrator.service >/dev/null 2>&1 || true
+  run_root systemctl start zomorod-integrator.service >/dev/null 2>&1 || true
+}
+
+reintegrate() {
+  if [[ -x "${ZROOT}/plugin/integrate-dashboard.sh" ]]; then
+    run_root "${ZROOT}/plugin/integrate-dashboard.sh" >/dev/null 2>&1 || true
+  fi
+  if [[ -x /opt/hs-pg/plugin/integrate-dashboard.sh ]]; then
+    run_root /opt/hs-pg/plugin/integrate-dashboard.sh >/dev/null 2>&1 || true
+  fi
+  reactivate_persistence_guard
+}
+
+run_latest_installer() {
+  local mode="${1:-install}"
+  shift || true
+  command -v curl >/dev/null 2>&1 || { bad "curl is required"; return 1; }
+  command -v python3 >/dev/null 2>&1 || { bad "python3 is required"; return 1; }
+
+  local tmp sha raw
+  tmp="$(mktemp /tmp/zomorod-installer.XXXXXX.sh)"
+  trap 'rm -f "${tmp:-}"' RETURN
+
+  info "Resolving latest main commit"
+  sha="$(resolve_main_sha)"
+  [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { bad "Could not resolve latest main SHA"; return 1; }
+  info "Pinned snapshot: ${sha:0:12}"
+
+  raw="https://raw.githubusercontent.com/${REPO}/${sha}/install.sh"
+  curl -fL --show-error --connect-timeout 20 --max-time 120 --retry 3 --retry-delay 2 "$raw" -o "$tmp"
+  grep -q 'Zomorod Template + Special Plugin installer' "$tmp" || { bad "Invalid installer received"; return 1; }
+
+  sed -i "s/^SOURCE_REF=\"main\"$/SOURCE_REF=\"${sha}\"/" "$tmp"
+  grep -q "^SOURCE_REF=\"${sha}\"$" "$tmp" || { bad "Could not pin installer source ref"; return 1; }
+  if [[ "$mode" == "update" ]]; then
+    sed -i 's/^MODE="install"$/MODE="update"/' "$tmp"
+  fi
+
+  if [[ "$mode" == "update" ]]; then info "Applying Zomorod update"; else info "Installing/repairing Zomorod"; fi
+  run_root bash "$tmp" "$@"
+  reactivate_persistence_guard
+  ok "Zomorod ${mode} finished at ${sha:0:12}"
+}
+
+cmd_restart() {
+  local pg
+  pg="$(command -v pasarguard || true)"
+  if [[ -z "$pg" ]]; then
+    bad "Official PasarGuard CLI was not found; refusing raw Docker restart"
+    return 1
+  fi
+  info "Safely restarting only the PasarGuard panel"
+  run_root "$pg" restart --no-logs
+  info "Re-applying Zomorod integration"
+  reintegrate
+  ok "PasarGuard + Zomorod integration restarted"
+}
+
+status_line() {
+  local label="$1" state="$2" detail="${3:-}"
+  if [[ "$state" == "ok" ]]; then
+    printf '  %s✓%s %-25s %s\n' "$EMERALD_BRIGHT" "$RESET" "$label" "$detail"
+  elif [[ "$state" == "warn" ]]; then
+    printf '  %s!%s %-25s %s\n' "$GOLD" "$RESET" "$label" "$detail"
+  else
+    printf '  %s×%s %-25s %s\n' "$RED" "$RESET" "$label" "$detail"
+  fi
+}
+
+cmd_status() {
+  banner
+  local ver commit pg
+  ver="$(plugin_version 2>/dev/null || true)"
+  commit="$(installed_commit 2>/dev/null || true)"
+  printf '\n%sZomorod%s\n' "$GOLD" "$RESET"
+  [[ -n "$ver" ]] && status_line "Plugin" ok "v$ver" || status_line "Plugin" bad "missing"
+  [[ -s "${ZROOT}/backend/zomorod_admin_subscriptions.py" ]] && status_line "Admin backend" ok "installed" || status_line "Admin backend" bad "missing"
+  [[ -s /var/lib/pasarguard/templates/subscription/index.html ]] && status_line "Subscription template" ok "installed" || status_line "Subscription template" bad "missing"
+  [[ -n "$commit" ]] && status_line "Installed snapshot" ok "${commit:0:12}" || status_line "Installed snapshot" warn "unknown"
+
+  printf '\n%sPersistence%s\n' "$GOLD" "$RESET"
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl is-active --quiet zomorod-integrator.path && status_line "DOM/container watcher" ok "active" || status_line "DOM/container watcher" bad "inactive"
+    systemctl is-active --quiet zomorod-integrator.timer && status_line "Self-heal timer" ok "active" || status_line "Self-heal timer" bad "inactive"
+    systemctl is-active --quiet zomorod-panel-update.path && status_line "Panel update watcher" ok "active" || status_line "Panel update watcher" warn "inactive"
+  else
+    status_line "systemd" warn "not available"
+  fi
+
+  printf '\n%sPasarGuard%s\n' "$GOLD" "$RESET"
+  pg="$(command -v pasarguard || true)"
+  if [[ -n "$pg" ]]; then
+    if "$pg" status >/dev/null 2>&1; then status_line "Panel" ok "running"; else status_line "Panel" bad "status failed"; fi
+  else
+    status_line "Official CLI" bad "not found"
+  fi
+
+  printf '\n'
+}
+
+cmd_version() {
+  local ver
+  ver="$(plugin_version 2>/dev/null || true)"
+  if [[ -n "$ver" ]]; then printf 'Zomorod %s\n' "$ver"; else bad "Zomorod is not installed"; return 1; fi
+}
+
+pause_menu() {
+  [[ -t 0 ]] || return 0
+  printf '\n%sPress Enter to continue…%s' "$MUTED" "$RESET"
+  read -r _ || true
+}
+
+interactive_menu() {
+  while true; do
+    printf '\n'
+    banner
+    printf '\n  %s1%s  Status\n' "$GOLD" "$RESET"
+    printf '  %s2%s  Update Zomorod\n' "$GOLD" "$RESET"
+    printf '  %s3%s  Restart Zomorod / PasarGuard panel\n' "$GOLD" "$RESET"
+    printf '  %s4%s  Install / Repair\n' "$GOLD" "$RESET"
+    printf '  %s5%s  Version\n' "$GOLD" "$RESET"
+    printf '  %s0%s  Exit\n\n' "$MUTED" "$RESET"
+    printf '%sSelect › %s' "$EMERALD_BRIGHT" "$RESET"
+    read -r choice || return 0
+    case "$choice" in
+      1) cmd_status; pause_menu ;;
+      2) run_latest_installer update; pause_menu ;;
+      3) cmd_restart; pause_menu ;;
+      4) run_latest_installer install; pause_menu ;;
+      5) cmd_version; pause_menu ;;
+      0|q|Q|exit) return 0 ;;
+      *) warn "Invalid selection" ;;
+    esac
+  done
 }
 
 case "${1:-}" in
-  update)
-    shift
-    command -v curl >/dev/null 2>&1 || { echo '[Zomorod] curl is required' >&2; exit 1; }
-    command -v python3 >/dev/null 2>&1 || { echo '[Zomorod] python3 is required' >&2; exit 1; }
-    tmp="$(mktemp /tmp/zomorod-update.XXXXXX.sh)"
-    trap 'rm -f "$tmp"' EXIT
-
-    echo "[Zomorod] resolving latest main commit..."
-    sha="$(resolve_main_sha)"
-    [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo '[Zomorod] could not resolve latest main SHA' >&2; exit 1; }
-    echo "[Zomorod] latest commit: $sha"
-
-    raw="https://raw.githubusercontent.com/${REPO}/${sha}/install.sh"
-    curl -fL --show-error --connect-timeout 20 --max-time 120 --retry 3 --retry-delay 2 \
-      "$raw" -o "$tmp"
-    grep -q 'Zomorod Template + Special Plugin installer' "$tmp" || { echo '[Zomorod] invalid installer received' >&2; exit 1; }
-
-    # Pin every file downloaded by the installer to the same immutable commit.
-    sed -i "s/^SOURCE_REF=\"main\"$/SOURCE_REF=\"${sha}\"/" "$tmp"
-    grep -q "^SOURCE_REF=\"${sha}\"$" "$tmp" || { echo '[Zomorod] could not pin installer source ref' >&2; exit 1; }
-
-    echo "[Zomorod] applying immutable snapshot..."
-    run_root bash "$tmp" "$@"
-
-    # The official PasarGuard restart may replace the container. Re-arm the
-    # host-level guard immediately so dashboard plugins are injected again into
-    # the new container without waiting for the periodic timer.
-    reactivate_persistence_guard
-
-    echo "[Zomorod] update finished at commit $sha. Persistent integration guard is active."
+  update) shift; run_latest_installer update "$@" ;;
+  install|repair) shift; run_latest_installer install "$@" ;;
+  restart) shift; cmd_restart "$@" ;;
+  status) shift; cmd_status "$@" ;;
+  version) shift; cmd_version "$@" ;;
+  -h|--help|help) usage ;;
+  '')
+    if [[ -t 0 && -t 1 ]]; then interactive_menu; else usage; fi
     ;;
-  version)
-    file="/opt/zomorod/plugin/zomorod-special.js"
-    [[ -f "$file" ]] || { echo 'Zomorod is not installed'; exit 1; }
-    grep -m1 "const VERSION" "$file" | sed -E "s/.*'([^']+)'.*/Zomorod \\1/"
-    ;;
-  status)
-    echo "Zomorod root: /opt/zomorod"
-    test -s /opt/zomorod/plugin/zomorod-special.js && echo 'Plugin: installed' || echo 'Plugin: missing'
-    test -s /opt/zomorod/backend/zomorod_admin_subscriptions.py && echo 'Admin namespaces backend: installed' || echo 'Admin namespaces backend: missing'
-    test -s /var/lib/pasarguard/templates/subscription/index.html && echo 'Subscription template: installed' || echo 'Subscription template: missing'
-    if command -v systemctl >/dev/null 2>&1; then
-      systemctl is-active zomorod-integrator.service >/dev/null 2>&1 && echo 'Persistence guard: active' || echo 'Persistence guard: inactive'
-      systemctl is-enabled zomorod-integrator.timer >/dev/null 2>&1 && echo 'Self-heal timer: enabled' || echo 'Self-heal timer: not enabled'
-    fi
-    ;;
-  -h|--help|help|'') usage ;;
-  *) echo "Unknown command: $1" >&2; usage >&2; exit 2 ;;
+  *) bad "Unknown command: $1"; usage >&2; exit 2 ;;
 esac
+
+[executed on device: pedram2 (cbf92ea2-36fe-4909-b025-f508c0a2544d)]
