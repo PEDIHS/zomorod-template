@@ -199,7 +199,18 @@ template_path=Path(sys.argv[1]); runtime_path=Path(sys.argv[2]); marker=sys.argv
 original=template_path.read_text(encoding="utf-8"); runtime=runtime_path.read_text(encoding="utf-8")
 pattern=re.compile(rf'\s*<script id="{re.escape(marker)}">.*?</script>\s*',re.S)
 html=pattern.sub('',original)
-html=re.sub(r'(?i)(?<![A-Za-z0-9_])ganj(?![A-Za-z0-9_])','زمرد',html)
+html=re.sub(
+    r'(className:"treasury-brand","aria-label":")ganj(")',
+    r'\\1زمرد\\2',
+    html,
+    flags=re.I,
+)
+html=re.sub(
+    r'(className:"treasury-brand-shield"[^}]*}\),E\.jsx\("span",\{children:")ganj(")',
+    r'\\1زمرد\\2',
+    html,
+    flags=re.I,
+)
 html=re.sub(r'\s*<style id="zomorod-runtime-boot-style">.*?</style>\s*','\n',html,flags=re.S)
 html=re.sub(r'\s*<script id="zomorod-runtime-boot-script">.*?</script>\s*','\n',html,flags=re.S)
 boot='''<style id="zomorod-runtime-boot-style">
