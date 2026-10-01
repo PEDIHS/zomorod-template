@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.9.1';
+  const VERSION = '4.9.2';
   const HEADER_PREFIX = 'x-zomorod-';
   const NAV_ID = 'zomorod-special-nav';
   const ROOT_ID = 'zomorod-special-root';
@@ -25,6 +25,12 @@
   let accessAllowed = false;
   let isOwner = false;
   let currentAdmin = null;
+  let accessResolvePromise = null;
+  let accessRetryTimer = null;
+  let accessFailures = 0;
+  const ACCESS_RETRY_BASE_MS = 600;
+  const ACCESS_RETRY_MAX_MS = 12000;
+  const UI_SELF_HEAL_MS = 2000;
 
   const THEME_PRESETS = [
     { id: 'emerald', label: 'زمرد سلطنتی', primary: '#C9992D', secondary: '#064C38' },
@@ -381,14 +387,14 @@
 
   function findSettingsTabBar() {
     if (!isSettingsRoute()) return null;
-    const tabSelector = ':scope > button, :scope > a, :scope > [role="tab"]';
-    const isTabBar = (node) => node instanceof HTMLElement && node.querySelectorAll(tabSelector).length >= 1;
+    const isNativeTab = (node) => node instanceof Element && node.matches('button, a, [role="tab"]') && node.id !== NAV_ID;
+    const isTabBar = (node) => node instanceof HTMLElement && [...node.children].some(isNativeTab);
 
     const preferred = document.querySelector('.scrollbar-hide.flex.overflow-x-auto.border-b');
     if (isTabBar(preferred)) return preferred;
 
     return [...document.querySelectorAll(
-      '[role="tablist"], .scrollbar-hide, [class*="overflow-x-auto"][class*="border-b"]'
+      '[role="tablist"], .scrollbar-hide, [class*="overflow-x-auto"][class*="border-b"], [class*="overflow-x"][class*="border-b"]'
     )].find(isTabBar) || null;
   }
 
@@ -1122,7 +1128,12 @@
         if (button && button.id !== NAV_ID && active) deactivate();
       }, true);
     }
-    if (document.getElementById(NAV_ID)) return;
+    const existing = document.getElementById(NAV_ID);
+    if (existing) {
+      if (existing.parentElement !== tabBar) tabBar.appendChild(existing);
+      if (active) setTabState(true);
+      return;
+    }
     const button = document.createElement('button');
     button.id = NAV_ID;
     button.type = 'button';
@@ -1160,7 +1171,9 @@
       }
       const tabBar = findSettingsTabBar();
       if (!tabBar) {
-        if (active) deactivate();
+        // React can briefly replace the settings tab strip during hydration or
+        // responsive re-layout. Keep the active state and let the observer /
+        // watchdog re-attach Zomorod instead of treating this as navigation.
         return;
       }
       ensureTab();
@@ -1184,30 +1197,108 @@
     requestAnimationFrame(maintain);
   }
 
-  async function resolveAccess() {
-    try {
-      currentAdmin = await api('/api/admin');
-      accessAllowed = Boolean(currentAdmin?.id || currentAdmin?.username);
-      isOwner = currentAdmin?.role?.is_owner === true || currentAdmin?.is_owner === true;
-      if (isOwner) void loadUpdateStatus(); else removeUpdateNotice();
-    } catch (_) {
-      currentAdmin = null;
-      accessAllowed = false;
-      isOwner = false;
-    } finally {
-      accessResolved = true;
-      scheduleMaintain();
-    }
+  function clearAccessRetry() {
+    if (!accessRetryTimer) return;
+    clearTimeout(accessRetryTimer);
+    accessRetryTimer = null;
   }
 
-  window.addEventListener('popstate', () => { if (active) deactivate(); scheduleMaintain(); });
-  window.addEventListener('hashchange', () => { if (!isSettingsRoute()) active = false; scheduleMaintain(); });
+  function scheduleAccessRetry() {
+    if (accessRetryTimer || !isSettingsRoute()) return;
+    const delay = Math.min(ACCESS_RETRY_MAX_MS, ACCESS_RETRY_BASE_MS * (2 ** Math.min(accessFailures, 4)));
+    accessRetryTimer = setTimeout(() => {
+      accessRetryTimer = null;
+      if (isSettingsRoute()) void resolveAccess(true);
+    }, delay);
+  }
+
+  function resolveAccess(force = false) {
+    if (accessResolvePromise) return accessResolvePromise;
+    if (!force && accessResolved && accessAllowed) return Promise.resolve(currentAdmin);
+
+    accessResolvePromise = (async () => {
+      try {
+        const admin = await api('/api/admin');
+        currentAdmin = admin;
+        accessAllowed = Boolean(admin?.id || admin?.username);
+        isOwner = admin?.role?.is_owner === true || admin?.is_owner === true;
+        accessResolved = true;
+        accessFailures = 0;
+        clearAccessRetry();
+        if (isOwner) void loadUpdateStatus(); else removeUpdateNotice();
+        return admin;
+      } catch (error) {
+        accessFailures += 1;
+        const status = Number(error?.status || 0);
+        if (status === 401 || status === 403) {
+          // A real auth denial is authoritative. Network/timeout errors are not:
+          // they must never permanently hide the Zomorod tab for this session.
+          currentAdmin = null;
+          accessAllowed = false;
+          isOwner = false;
+          accessResolved = true;
+          clearAccessRetry();
+          removeUi();
+        } else {
+          if (!accessAllowed) {
+            currentAdmin = null;
+            isOwner = false;
+            accessResolved = false;
+          }
+          scheduleAccessRetry();
+        }
+        return null;
+      } finally {
+        accessResolvePromise = null;
+        scheduleMaintain();
+      }
+    })();
+
+    return accessResolvePromise;
+  }
+
+  function wakeUi(refreshAccess = false) {
+    if (isSettingsRoute() && (refreshAccess || !accessResolved)) void resolveAccess(refreshAccess);
+    scheduleMaintain();
+  }
+
+  window.addEventListener('popstate', () => {
+    if (active) deactivate();
+    wakeUi(true);
+  });
+  window.addEventListener('hashchange', () => {
+    if (!isSettingsRoute()) active = false;
+    wakeUi(true);
+  });
+  window.addEventListener('online', () => wakeUi(true));
+  window.addEventListener('focus', () => wakeUi(!accessResolved));
+  window.addEventListener('pageshow', () => wakeUi(!accessResolved));
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') wakeUi(!accessResolved);
+  });
+
   uiObserver = new MutationObserver(scheduleMaintain);
   observeUi();
+
+  // MutationObserver is the fast path. This tiny settings-only watchdog covers
+  // browser bfcache, React hydration races, and managed-child removals that can
+  // otherwise leave the injected tab missing until the next unrelated mutation.
+  setInterval(() => {
+    if (!isSettingsRoute()) return;
+    if (!accessResolved) {
+      void resolveAccess();
+      return;
+    }
+    if (!accessAllowed) return;
+    const tabBar = findSettingsTabBar();
+    const tab = document.getElementById(NAV_ID);
+    if (!tabBar || !tab || tab.parentElement !== tabBar) scheduleMaintain();
+  }, UI_SELF_HEAL_MS);
+
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => { resolveAccess(); scheduleMaintain(); }, { once: true });
+    document.addEventListener('DOMContentLoaded', () => { void resolveAccess(); scheduleMaintain(); }, { once: true });
   } else {
-    resolveAccess();
+    void resolveAccess();
     scheduleMaintain();
   }
 })();
