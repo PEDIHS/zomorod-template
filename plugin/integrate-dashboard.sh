@@ -199,18 +199,18 @@ template_path=Path(sys.argv[1]); runtime_path=Path(sys.argv[2]); marker=sys.argv
 original=template_path.read_text(encoding="utf-8"); runtime=runtime_path.read_text(encoding="utf-8")
 pattern=re.compile(rf'\s*<script id="{re.escape(marker)}">.*?</script>\s*',re.S)
 html=pattern.sub('',original)
-html=re.sub(
-    r'(className:"treasury-brand","aria-label":")ganj(")',
-    r'\\1زمرد\\2',
-    html,
-    flags=re.I,
-)
-html=re.sub(
-    r'(className:"treasury-brand-shield"[^}]*}\),E\.jsx\("span",\{children:")ganj(")',
-    r'\\1زمرد\\2',
-    html,
-    flags=re.I,
-)
+brand_marker='className:"treasury-brand"'
+cursor=0
+while True:
+    brand_at=html.find(brand_marker,cursor)
+    if brand_at < 0:
+        break
+    segment_end=min(len(html),brand_at+700)
+    segment=html[brand_at:segment_end]
+    segment=re.sub(r'("aria-label":")ganj(")',r'\1زمرد\2',segment,count=1,flags=re.I)
+    segment=re.sub(r'(children:")ganj(")',r'\1زمرد\2',segment,count=1,flags=re.I)
+    html=html[:brand_at]+segment+html[segment_end:]
+    cursor=brand_at+len(segment)
 html=re.sub(r'\s*<style id="zomorod-runtime-boot-style">.*?</style>\s*','\n',html,flags=re.S)
 html=re.sub(r'\s*<script id="zomorod-runtime-boot-script">.*?</script>\s*','\n',html,flags=re.S)
 boot='''<style id="zomorod-runtime-boot-style">
