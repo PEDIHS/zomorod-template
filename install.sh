@@ -171,6 +171,12 @@ while True:
     segment=re.sub(r'(children:")ganj(")',r'\1زمرد\2',segment,count=1,flags=re.I)
     html=html[:brand_at]+segment+html[segment_end:]
     cursor=brand_at+len(segment)
+footer_at=html.find('Powered by')
+if footer_at >= 0:
+    footer_end=min(len(html),footer_at+420)
+    footer_segment=html[footer_at:footer_end]
+    footer_segment=re.sub(r'(children:")ganj(")',r'\1GANJ\2',footer_segment,count=1)
+    html=html[:footer_at]+footer_segment+html[footer_end:]
 path.write_text(html,encoding="utf-8")
 PY
 }
