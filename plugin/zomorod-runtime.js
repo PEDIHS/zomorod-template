@@ -26,6 +26,18 @@
     loaded: false,
   };
 
+  const finishBoot = () => {
+    try {
+      if (typeof window.__zomorodFinishBoot === 'function') {
+        window.__zomorodFinishBoot();
+        return;
+      }
+      document.documentElement.removeAttribute('data-zomorod-booting');
+      document.getElementById('zomorod-boot-screen')?.remove();
+      document.getElementById('zomorod-runtime-boot-style')?.remove();
+    } catch (_) {}
+  };
+
   let applyQueued = false;
   let refreshInFlight = false;
   let domObserver = null;
@@ -507,6 +519,7 @@
       if (document.documentElement.getAttribute('data-zomorod') !== 'active') {
         document.documentElement.setAttribute('data-zomorod', 'active');
       }
+      finishBoot();
     } finally {
       observeDom();
     }
@@ -532,6 +545,7 @@
         console.warn('[Zomorod] runtime settings unavailable; original template remains untouched.', error);
         restoreOriginalUi();
         state.loaded = false;
+        finishBoot();
       } else {
         console.warn('[Zomorod] runtime refresh failed; keeping last known settings.', error);
       }
