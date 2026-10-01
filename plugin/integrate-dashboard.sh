@@ -224,8 +224,8 @@ html[data-zomorod-booting="1"] body>*:not(#zomorod-boot-screen):not(script):not(
 #zomorod-boot-screen{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:#f7f7f7;color:#202423}
 #zomorod-boot-screen span{width:28px;height:28px;border:2px solid rgba(40,44,43,.18);border-top-color:rgba(40,44,43,.72);border-radius:999px;animation:zomorodBootSpin .72s linear infinite}
 @keyframes zomorodBootSpin{to{transform:rotate(360deg)}}
-@media(prefers-color-scheme:dark){#zomorod-boot-screen{background:#0f1211;color:#f5f7f6}#zomorod-boot-screen span{border-color:rgba(245,247,246,.15);border-top-color:rgba(245,247,246,.76)}}
-@media(prefers-reduced-motion:reduce){#zomorod-boot-screen span{animation:none}}
+@media(prefers-color-scheme:dark){\n#zomorod-boot-screen{background:#0f1211;color:#f5f7f6}#zomorod-boot-screen span{border-color:rgba(245,247,246,.15);border-top-color:rgba(245,247,246,.76)}}
+@media(prefers-reduced-motion:reduce){\n#zomorod-boot-screen span{animation:none}}
 </style>
 <script id="zomorod-runtime-boot-script">
 (() => {
