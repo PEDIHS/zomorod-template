@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.9.5';
+  const VERSION = '4.10.0';
   const HEADER_PREFIX = 'x-zomorod-';
   const NAV_ID = 'zomorod-special-nav';
   const ROOT_ID = 'zomorod-special-root';
@@ -894,6 +894,60 @@
     }
   }
 
+  function pwaSection() {
+    if (!isOwner) return '';
+    return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.bell}</span>وب‌اپ و اعلان‌ها (PWA)</h3><div class="z-card-note">پیش‌نیازها همراه نصب زمرد آماده می‌شوند؛ وب‌اپ و Web Push تا زمانی که شما فعال نکنید خاموش هستند. کاربر هم باید خودش مجوز اعلان بدهد.</div></div><span class="z-native">OPTIONAL</span></div><div id="z-pwa-settings" class="z-help">در حال دریافت وضعیت PWA…</div></section>`;
+  }
+
+  async function bindPwaSettings(root) {
+    const panel = root?.querySelector('#z-pwa-settings');
+    if (!panel || !isOwner) return;
+    try {
+      const cfg = await api('/api/zomorod/pwa/admin');
+      if (!panel.isConnected) return;
+      panel.innerHTML = [
+        '<div class="z-grid">',
+        '<div class="z-toggle is-special"><div><div class="z-toggle-title">فعال‌سازی PWA</div><div class="z-toggle-sub">افزودن زمرد به صفحه اصلی گوشی و ثبت سرویس‌ورکر</div></div><input type="checkbox" id="z-pwa-on"></div>',
+        '<div class="z-toggle is-special"><div><div class="z-toggle-title">فعال‌سازی Web Push</div><div class="z-toggle-sub">دریافت اعلان فقط پس از موافقت کاربر</div></div><input type="checkbox" id="z-pwa-push-on"></div>',
+        '</div><div class="z-help" id="z-pwa-prereq"></div>',
+        '<div class="z-actions"><span id="z-pwa-status" class="z-status">تنظیمات مستقل از سایر بخش‌های زمرد است.</span><button type="button" class="z-save" id="z-pwa-save">ذخیره تنظیمات PWA</button></div>',
+        '<div class="z-grid" style="margin-top:14px"><div class="z-field"><label for="z-pwa-title">عنوان اعلان عمومی</label><input id="z-pwa-title" maxlength="70" type="text" placeholder="زمرد | اطلاعیه"></div><div class="z-field"><label for="z-pwa-body">متن اعلان عمومی</label><input id="z-pwa-body" maxlength="180" type="text" placeholder="متن اعلان"></div></div>',
+        '<div class="z-actions"><span class="z-status" id="z-pwa-send-result"></span><button type="button" id="z-pwa-send" class="z-save">ارسال اعلان به دستگاه‌های عضو</button></div>'
+      ].join('');
+      const on = panel.querySelector('#z-pwa-on');
+      const push = panel.querySelector('#z-pwa-push-on');
+      const save = panel.querySelector('#z-pwa-save');
+      const send = panel.querySelector('#z-pwa-send');
+      const info = panel.querySelector('#z-pwa-prereq');
+      const status = panel.querySelector('#z-pwa-status');
+      on.checked = cfg.pwa_enabled === true;
+      push.checked = cfg.push_enabled === true;
+      info.textContent = cfg.delivery_ready ? `سیستم ارسال آماده است · ${Number(cfg.subscribers || 0)} دستگاه عضو` : 'پیش‌نیاز ارسال Web Push در دسترس نیست؛ تا نصب کامل آن، Push غیرفعال می‌ماند.';
+      const sync = () => { if (!on.checked) push.checked = false; push.disabled = !on.checked || !cfg.delivery_ready; send.disabled = !on.checked || !push.checked || !cfg.delivery_ready; };
+      on.addEventListener('change', sync); push.addEventListener('change', sync); sync();
+      save.addEventListener('click', async () => {
+        save.disabled = true; status.className = 'z-status'; status.textContent = 'در حال ذخیره…';
+        try {
+          await api('/api/zomorod/pwa/admin', {method:'PUT', body:JSON.stringify({pwa_enabled:on.checked, push_enabled:on.checked && push.checked})});
+          status.className = 'z-status ok'; status.textContent = 'تنظیمات PWA ذخیره شد؛ صفحات باز با بارگذاری مجدد به‌روزرسانی می‌شوند.';
+          sync();
+        } catch (error) { status.className = 'z-status err'; status.textContent = `خطا: ${error?.message || error}`; }
+        finally { save.disabled = false; }
+      });
+      send.addEventListener('click', async () => {
+        const title = panel.querySelector('#z-pwa-title')?.value?.trim();
+        const body = panel.querySelector('#z-pwa-body')?.value?.trim();
+        const result = panel.querySelector('#z-pwa-send-result');
+        if (!title || !body) {result.textContent='عنوان و متن اعلان را وارد کنید.';return;}
+        if (!window.confirm('این اعلان برای دستگاه‌هایی که قبلاً عضویت و مجوز داده‌اند ارسال شود؟')) return;
+        send.disabled = true; result.textContent = 'در حال ارسال…';
+        try { const resp = await api('/api/zomorod/pwa/broadcast',{method:'POST',body:JSON.stringify({title,body})});
+          result.textContent = `ارسال موفق: ${Number(resp.sent || 0)} · ناموفق: ${Number(resp.failed || 0)}`;
+        } catch (error) { result.textContent = `خطای ارسال: ${error?.message || error}`; }
+        finally { sync(); }
+      });
+    } catch (error) { if (panel.isConnected) panel.textContent = `PWA در دسترس نیست: ${error?.message || error}`; }
+  }
   function renderForm(cfg, profilePayload = null) {
     const username = currentAdmin?.username || '';
     const apps = isOwner
