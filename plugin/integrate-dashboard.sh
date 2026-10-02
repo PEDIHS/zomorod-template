@@ -238,6 +238,19 @@ html[data-zomorod-booting="1"] body>*:not(#zomorod-boot-screen):not(script):not(
     document.getElementById('zomorod-runtime-boot-style')?.remove();
   };
   window.__zomorodFinishBoot=reveal;
+  // Start the initial theme/config request during HTML parsing, in parallel
+  // with React bundle evaluation. Nothing is cached or written to storage.
+  try {
+    const route=location.pathname.endsWith('/')?location.pathname.slice(0,-1):location.pathname;
+    if(route.startsWith('/sub/')) {
+      const ctrl=new AbortController();
+      const pending=fetch(route+'/raw',{headers:{Accept:'application/json'},cache:'no-store',signal:ctrl.signal})
+        .then(r=>{if(!r.ok)throw new Error('raw '+r.status);return r.json();});
+      const deadline=setTimeout(()=>ctrl.abort(),6500);
+      window.__zomorodRawPromise=pending.finally(()=>clearTimeout(deadline));
+      window.__zomorodRawPromise.catch(()=>{});
+    }
+  } catch(_) {}
   const mount=()=>{
     if(document.getElementById('zomorod-boot-screen')) return;
     const node=document.createElement('div');
