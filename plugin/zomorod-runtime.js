@@ -339,6 +339,13 @@
   const basePath = () => window.location.pathname.replace(/\/+$/, '');
 
   async function fetchRaw() {
+    // Consume the early head request rather than starting a second fetch
+    // after the full React application has been parsed and mounted.
+    const early = window.__zomorodRawPromise;
+    if (early) {
+      window.__zomorodRawPromise = null;
+      return await early;
+    }
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 7000);
     try {
