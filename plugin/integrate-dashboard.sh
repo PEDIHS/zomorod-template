@@ -7,6 +7,7 @@ SUB_TEMPLATE="${SUB_TEMPLATE:-/var/lib/pasarguard/templates/subscription/index.h
 ADMIN_JS="${ZOMOROD_ROOT}/plugin/zomorod-special.js"
 RUNTIME_JS="${ZOMOROD_ROOT}/plugin/zomorod-runtime.js"
 BACKEND_PY="${ZOMOROD_ROOT}/backend/zomorod_admin_subscriptions.py"
+PWA_BACKEND_PY="${ZOMOROD_ROOT}/backend/zomorod_pwa.py"
 COMPOSE_FILE="${PASARGUARD_ROOT}/docker-compose.yml"
 COMPOSE_PROJECT="${PASARGUARD_COMPOSE_PROJECT:-pasarguard}"
 MARKER_ADMIN="zomorod-special-loader"
@@ -259,6 +260,21 @@ if html!=original: template_path.write_text(html,encoding="utf-8")
 PY
 }
 
+inject_pwa_loader() {
+  [[ -s "${SUB_TEMPLATE}" ]] || return 1
+  python3 - "${SUB_TEMPLATE}" <<'PY'
+from pathlib import Path
+import re,sys
+p=Path(sys.argv[1])
+original=p.read_text(encoding="utf-8")
+html=re.sub(r'\s*<script id="zomorod-pwa-loader"[^>]*></script>\s*','\n',original,flags=re.I)
+tag='<script id="zomorod-pwa-loader" src="/api/zomorod/pwa/client.js" defer></script>'
+html=html.replace('</body>',tag+'\n</body>',1) if '</body>' in html else html+'\n'+tag
+if html!=original:
+    p.write_text(html,encoding="utf-8")
+PY
+}
+
 patch_router_file() {
   local file="$1"
   [[ -f "${file}" && -s "${BACKEND_PY}" ]] || return 1
@@ -315,6 +331,15 @@ activate_live_docker_subscription() {
   [[ -s "${SUB_TEMPLATE}" ]] || return 1
   live_template="$(find_container_subscription_template "${cid}" || true)"
   [[ -n "${live_template}" ]] || return 1
+  # Compile in an isolated temporary path before touching the live HTML.
+  local candidate="/tmp/zomorod-sub-preflight.html"
+  docker cp "${SUB_TEMPLATE}" "${cid}:${candidate}" >/dev/null || return 1
+  if ! docker exec "${cid}" python3 -c "from jinja2 import Environment; from pathlib import Path; Environment().parse(Path('${candidate}').read_text(encoding='utf-8'))" >/dev/null 2>&1; then
+    warn "Jinja preflight failed; live subscription template was not changed"
+    docker exec "${cid}" rm -f "${candidate}" >/dev/null 2>&1 || true
+    return 1
+  fi
+  docker exec "${cid}" rm -f "${candidate}" >/dev/null 2>&1 || true
   docker cp "${SUB_TEMPLATE}" "${cid}:${live_template}" >/dev/null
   docker exec "${cid}" grep -q "${MARKER_RUNTIME}" "${live_template}" >/dev/null 2>&1 || return 1
   log "subscription UI activated live inside Docker service ${service} (${live_template}); no restart/recreate used"
@@ -330,6 +355,9 @@ integrate_docker() {
   if activate_live_docker_subscription "${cid}" "${service}"; then subscription_ok=1; else warn "could not hot-activate subscription template"; fi
 
   router_init="$(find_container_router_init "${cid}" || true)"
+  if [[ -n "${router_init}" && -s "${PWA_BACKEND_PY}" ]]; then
+    docker cp "${PWA_BACKEND_PY}" "${cid}:${router_init%/__init__.py}/zomorod_pwa.py" >/dev/null || warn "could not stage PWA backend in live container"
+  fi
   if [[ -n "${router_init}" && -s "${BACKEND_PY}" ]]; then
     if patch_router_container "${cid}" "${router_init}"; then
       backend_ok=1
@@ -360,6 +388,7 @@ main() {
   [[ ${EUID} -eq 0 ]] || { warn "run as root"; exit 1; }
   [[ -s "${ADMIN_JS}" ]] || { warn "admin integration JS not found: ${ADMIN_JS}"; exit 1; }
   inject_subscription_runtime || true
+  inject_pwa_loader || true
 
   local host_router build_dir
   host_router="$(find_host_router_init || true)"
