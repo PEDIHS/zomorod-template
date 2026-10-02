@@ -131,8 +131,8 @@ async def pwa_admin_config(_current: AdminDetails = Depends(_admin)):
 
 
 class PwaSettings(BaseModel):
-    pwa_enabled: bool = True
-    push_enabled: bool = True
+    pwa_enabled: bool = False
+    push_enabled: bool = False
 
 
 @router.put("/api/zomorod/pwa/admin")
@@ -231,6 +231,15 @@ def _validated_push_endpoint(url: str):
         raise HTTPException(422, "Unrecognized push service")
 
 
+def _require_same_origin(request: Request):
+    """Check against the public Host, not the internal HTTP proxy scheme."""
+    origin = urlsplit(request.headers.get("origin", ""))
+    public_host = request.headers.get("host", "").lower()
+    is_loopback = origin.hostname in ("localhost", "127.0.0.1", "::1")
+    if origin.netloc.lower() != public_host or origin.scheme not in (("https", "http") if is_loopback else ("https",)):
+        raise HTTPException(403, "Same-origin HTTPS required")
+
+
 def _validate_device(model: DeviceSubscription):
     _validated_push_endpoint(model.endpoint)
     for name in ("p256dh", "auth"):
@@ -251,9 +260,7 @@ async def pwa_subscribe(token: str, model: DeviceSubscription, request: Request,
     cfg = _public_config()
     if not cfg["push_enabled"]:
         raise HTTPException(403, "Push disabled")
-    origin = request.headers.get("origin", "")
-    if not origin or urlsplit(origin).netloc != request.url.netloc or urlsplit(origin).scheme not in {"https", "http"}:
-        raise HTTPException(403, "Same-origin required")
+    _require_same_origin(request)
     _validate_device(model)
     user = await _token_user(db, token)
     now = datetime.now(UTC).isoformat()
@@ -275,9 +282,7 @@ async def pwa_subscribe(token: str, model: DeviceSubscription, request: Request,
 @router.delete("/api/zomorod/pwa/subscribe/{token}")
 async def pwa_unsubscribe(token: str, model: DeviceSubscription, request: Request,
                           db: AsyncSession = Depends(get_db)):
-    origin = request.headers.get("origin", "")
-    if not origin or urlsplit(origin).netloc != request.url.netloc or urlsplit(origin).scheme != request.url.scheme:
-        raise HTTPException(403, "Same-origin required")
+    _require_same_origin(request)
     user = await _token_user(db, token)
     with _locked():
         data = _read(DEVICES)
@@ -334,7 +339,8 @@ async def pwa_broadcast(payload: Broadcast, request: Request,
         return {"total": 0, "sent": 0, "failed": 0}
     message = json.dumps({"title": payload.title, "body": payload.body,
                           "url": SUB_SCOPE}, ensure_ascii=False)
-    contact = str(request.base_url).rstrip("/")
+    # An externally valid HTTPS URL is required as the VAPID contact claim.
+    contact = "https://" + request.headers.get("host", "").strip("/")
     semaphore = asyncio.Semaphore(6)
     async def run(device):
         async with semaphore:
