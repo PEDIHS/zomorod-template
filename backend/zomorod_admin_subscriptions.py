@@ -651,12 +651,21 @@ async def _finalize_subscription_response(response: Response, admin: Admin, requ
     # Compress only large HTML pages when requested by a browser. This avoids
     # touching Xray/VLESS/plain-text subscription formats and tunnel traffic.
     # Run the lightweight compression in a worker thread, not the event loop.
-    accepts_gzip = any(
-        part.strip().split(';', 1)[0] == 'gzip' and
-        not any(p.strip().startswith('q=0') and not p.strip().startswith('q=0.')
-                for p in part.split(';')[1:])
-        for part in request.headers.get('accept-encoding', '').lower().split(',')
-    )
+    accepts_gzip = False
+    for entry in request.headers.get('accept-encoding', '').lower().split(','):
+        name, *parameters = entry.strip().split(';')
+        if name.strip() != 'gzip':
+            continue
+        quality = 1.0
+        for parameter in parameters:
+            value = parameter.strip()
+            if value.startswith('q='):
+                try:
+                    quality = float(value[2:])
+                except ValueError:
+                    quality = 0.0
+        accepts_gzip = quality > 0
+        break
     body = getattr(response, 'body', None)
     if (request.method == 'GET' and response.status_code == 200 and accepts_gzip
             and response.headers.get('content-type', '').lower().startswith('text/html')
