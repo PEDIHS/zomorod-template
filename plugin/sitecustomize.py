@@ -70,7 +70,7 @@ def _make_pasarguard_importable() -> None:
     raise RuntimeError("PasarGuard application directory was not found before main.py startup")
 
 
-def _has_profile_route(routes, _seen: set[int] | None = None) -> bool:
+def _has_profile_route(routes, _seen: set[int] | None = None, path: str = PROFILE_ROUTE) -> bool:
     """Support both classic FastAPI routes and newer _IncludedRouter wrappers."""
     seen = _seen if _seen is not None else set()
     for route in routes or []:
@@ -78,14 +78,14 @@ def _has_profile_route(routes, _seen: set[int] | None = None) -> bool:
         if route_id in seen:
             continue
         seen.add(route_id)
-        if getattr(route, "path", None) == PROFILE_ROUTE:
+        if getattr(route, "path", None) == path:
             return True
         original_router = getattr(route, "original_router", None)
         nested_routes = getattr(original_router, "routes", None) if original_router is not None else None
-        if nested_routes is not None and _has_profile_route(nested_routes, seen):
+        if nested_routes is not None and _has_profile_route(nested_routes, seen, path):
             return True
         direct_nested = getattr(route, "routes", None)
-        if direct_nested is not None and _has_profile_route(direct_nested, seen):
+        if direct_nested is not None and _has_profile_route(direct_nested, seen, path):
             return True
     return False
 
@@ -97,6 +97,17 @@ def _bootstrap() -> None:
     try:
         _make_pasarguard_importable()
         from app.routers import api_router
+
+        # Import PWA after app.routers has finished initializing. Importing it
+        # from inside zomorod_admin_subscriptions can hit a circular import in
+        # some PasarGuard releases, so register the independent routes here.
+        try:
+            pwa_backend = importlib.import_module("zomorod_pwa")
+            if not _has_profile_route(api_router.routes, path="/api/zomorod/pwa/config"):
+                api_router.include_router(pwa_backend.router)
+                _log("PWA API registered (features remain disabled by default)")
+        except Exception as pwa_exc:
+            _log(f"PWA backend is optional; routes not registered: {type(pwa_exc).__name__}: {pwa_exc}")
 
         if _has_profile_route(api_router.routes):
             _log("router already registered; keeping existing registration")
