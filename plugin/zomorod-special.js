@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.10.0';
+  const VERSION = '4.10.1';
   const HEADER_PREFIX = 'x-zomorod-';
   const NAV_ID = 'zomorod-special-nav';
   const ROOT_ID = 'zomorod-special-root';
@@ -969,6 +969,7 @@
       <section class="z-hero"><div class="z-hero-row"><div class="z-brand"><div class="z-logo">${icons.gem}</div><div><div class="z-title-row"><h2 class="z-title">Zomorod Template</h2><span class="z-special">SPECIAL</span>${roleBadge}</div><div class="z-subtitle">${subtitle}</div></div></div><span class="z-version">v${VERSION}</span></div></section>
       <div class="z-content">
         ${updateSection()}
+        ${pwaSection()}
         ${adminProfilesSection()}
         ${ownPathSection(profilePayload)}
         ${appearanceSection(cfg)}
@@ -1000,6 +1001,7 @@
     bindOwnPath(root);
     bindAdminProfileActions(root);
     bindAppearance(root, cfg);
+    void bindPwaSettings(root);
   }
 
   function renderOwner(settings, profilePayload = cachedProfile) {
