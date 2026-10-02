@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import fcntl
+import gzip
 import json
 import os
 import re
@@ -645,6 +646,37 @@ def _overlay_response(response: Response, admin: Admin) -> Response:
     return response
 
 
+async def _finalize_subscription_response(response: Response, admin: Admin, request: Request) -> Response:
+    response = _overlay_response(response, admin)
+    # Compress only large HTML pages when requested by a browser. This avoids
+    # touching Xray/VLESS/plain-text subscription formats and tunnel traffic.
+    # Run the lightweight compression in a worker thread, not the event loop.
+    accepts_gzip = any(
+        part.strip().split(';', 1)[0] == 'gzip' and
+        not any(p.strip().startswith('q=0') and not p.strip().startswith('q=0.')
+                for p in part.split(';')[1:])
+        for part in request.headers.get('accept-encoding', '').lower().split(',')
+    )
+    body = getattr(response, 'body', None)
+    if (request.method == 'GET' and response.status_code == 200 and accepts_gzip
+            and response.headers.get('content-type', '').lower().startswith('text/html')
+            and 'content-encoding' not in response.headers
+            and isinstance(body, bytes) and len(body) >= 100_000):
+        try:
+            compressed = await asyncio.to_thread(gzip.compress, body, compresslevel=1, mtime=0)
+            if len(compressed) + 1024 < len(body):
+                response.body = compressed
+                response.headers['content-encoding'] = 'gzip'
+                response.headers['content-length'] = str(len(compressed))
+                vary = response.headers.get('vary', '')
+                if 'accept-encoding' not in vary.lower():
+                    response.headers['vary'] = (vary + ', ' if vary else '') + 'Accept-Encoding'
+        except Exception:
+            # Always fall back to the original HTML rather than disrupt the page.
+            pass
+    return response
+
+
 async def _get_db_admin(db: AsyncSession, admin_id: int) -> Admin:
     db_admin = (await db.execute(select(Admin).where(Admin.id == admin_id))).scalar_one_or_none()
     if db_admin is None:
@@ -861,7 +893,7 @@ async def namespaced_subscription(
         request_url=str(request.url),
         **headers.model_dump(),
     )
-    return _overlay_response(response, db_admin)
+    return await _finalize_subscription_response(response, db_admin, request)
 
 
 @router.head(f"{SUB_PREFIX}/{SCOPE}/{{token}}/")
@@ -950,7 +982,7 @@ async def namespaced_subscription_client(
         request_url=str(request.url),
         **headers.model_dump(),
     )
-    return _overlay_response(response, db_admin)
+    return await _finalize_subscription_response(response, db_admin, request)
 
 # Standard PasarGuard subscription links are scoped by the user owner too.
 # Zomorod is registered before the native subscription router, so these routes
@@ -982,7 +1014,7 @@ async def scoped_standard_subscription(
         request_url=str(request.url),
         **headers.model_dump(),
     )
-    return _overlay_response(response, db_admin)
+    return await _finalize_subscription_response(response, db_admin, request)
 
 
 @router.head(f"{SUB_PREFIX}/{{token}}/", include_in_schema=False)
@@ -1061,7 +1093,7 @@ async def scoped_standard_subscription_client(
         request_url=str(request.url),
         **headers.model_dump(),
     )
-    return _overlay_response(response, db_admin)
+    return await _finalize_subscription_response(response, db_admin, request)
 
 # Zomorod canonical subscription URL patch
 def _namespace_url_for_admin(url: str, admin_id: int) -> str:
