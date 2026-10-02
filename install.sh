@@ -201,7 +201,7 @@ install_template() {
 install_plugin_files() {
   local file
   log "downloading Zomorod plugin and backend files"
-  for file in plugin/zomorod-special.js plugin/zomorod-runtime.js plugin/integrate-dashboard.sh plugin/update-from-panel.sh plugin/sitecustomize.py backend/zomorod_admin_subscriptions.py; do
+  for file in plugin/zomorod-special.js plugin/zomorod-runtime.js plugin/integrate-dashboard.sh plugin/update-from-panel.sh plugin/sitecustomize.py plugin/zomorod-sw.js plugin/zomorod-pwa-client.js backend/zomorod_admin_subscriptions.py backend/zomorod_pwa.py; do
     download "$(raw_url "${file}")" "${TMP_DIR}/$(basename "${file}")" || fail "could not download ${file}"
   done
   install -m 0644 "${TMP_DIR}/zomorod-special.js" "${ZOMOROD_ROOT}/plugin/zomorod-special.js"
@@ -214,6 +214,26 @@ install_plugin_files() {
   # python main.py starts in every newly-created panel container.
   install -m 0644 "${TMP_DIR}/sitecustomize.py" "${PYTHON_BOOTSTRAP_DIR}/sitecustomize.py"
   install -m 0644 "${TMP_DIR}/zomorod_admin_subscriptions.py" "${PYTHON_BOOTSTRAP_DIR}/zomorod_admin_subscriptions.py"
+  install -m 0644 "${TMP_DIR}/zomorod_pwa.py" "${ZOMOROD_ROOT}/backend/zomorod_pwa.py"
+  install -m 0644 "${TMP_DIR}/zomorod_pwa.py" "${PYTHON_BOOTSTRAP_DIR}/zomorod_pwa.py"
+  install -m 0644 "${TMP_DIR}/zomorod-sw.js" "${PYTHON_BOOTSTRAP_DIR}/zomorod-sw.js"
+  install -m 0644 "${TMP_DIR}/zomorod-pwa-client.js" "${PYTHON_BOOTSTRAP_DIR}/zomorod-pwa-client.js"
+}
+
+
+install_pwa_requirements() {
+  # Install optional Web Push dependencies in an isolated persistent directory,
+  # outside PasarGuard's own venv. Both PWA and Push remain OFF by default.
+  local dest="/var/lib/pasarguard/zomorod/push-deps"
+  if [[ -f "${dest}/pywebpush/__init__.py" ]]; then
+    return 0
+  fi
+  mkdir -p "${dest}"
+  log "installing isolated Web Push prerequisites (inactive until enabled by Owner)"
+  if ! python3 -m pip install --quiet --no-input --disable-pip-version-check \
+    --timeout 15 --retries 1 --target "${dest}" 'pywebpush>=2,<3'; then
+    warn "Web Push prerequisite installation is pending; PWA remains available and Push stays disabled"
+  fi
 }
 
 install_cli() {
@@ -342,6 +362,7 @@ main() {
   backup_existing
   install_template
   install_plugin_files
+  install_pwa_requirements
   install_cli
   configure_pasarguard
   install_systemd_units
