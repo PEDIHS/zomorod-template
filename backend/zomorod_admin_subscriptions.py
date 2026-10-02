@@ -1098,3 +1098,12 @@ def _install_subscription_url_namespace_patch() -> None:
 
 
 _install_subscription_url_namespace_patch()
+
+
+# PWA routes are an optional, independently disabled Zomorod addon.
+# Installed in the persistent Python path before PasarGuard starts.
+try:
+    import zomorod_pwa
+    router.include_router(zomorod_pwa.router)
+except ImportError:
+    pass
