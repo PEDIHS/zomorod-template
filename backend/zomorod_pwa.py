@@ -41,7 +41,7 @@ LOCK = ROOT / ".pwa.lock"
 SW = ROOT / "python" / "zomorod-sw.js"
 SUB_SCOPE = "/" + subscription_env_settings.path.strip("/") + "/"
 operator = SubscriptionOperation(operator_type=OperatorType.API)
-DEFAULT = {"pwa_enabled": True, "push_enabled": True}
+DEFAULT = {"pwa_enabled": False, "push_enabled": False}
 
 
 @contextmanager
@@ -238,7 +238,7 @@ async def pwa_subscribe(token: str, model: DeviceSubscription, request: Request,
     if not cfg["push_enabled"]:
         raise HTTPException(403, "Push disabled")
     origin = request.headers.get("origin", "")
-    if not origin or urlsplit(origin).netloc != request.url.netloc or urlsplit(origin).scheme != request.url.scheme:
+    if not origin or urlsplit(origin).netloc != request.url.netloc or urlsplit(origin).scheme not in {"https", "http"}:
         raise HTTPException(403, "Same-origin required")
     _validate_device(model)
     user = await _token_user(db, token)
@@ -247,8 +247,10 @@ async def pwa_subscribe(token: str, model: DeviceSubscription, request: Request,
         data = _read(DEVICES)
         devices = [d for d in data.get("devices", []) if d.get("endpoint") != model.endpoint]
         uid = int(user.id)
-        devices = [d for d in devices if int(d.get("user_id", -1)) != uid or
-                   sum(int(e.get("user_id", -1)) == uid for e in devices) < 8]
+        mine = [d for d in devices if int(d.get("user_id", -1)) == uid]
+        if len(mine) >= 8:
+            stale = {d["endpoint"] for d in mine[:len(mine) - 7]}
+            devices = [d for d in devices if d.get("endpoint") not in stale]
         devices.append({"user_id": uid, "admin_id": int(user.admin_id),
                         "subscription": model.model_dump(exclude_none=True), "endpoint": model.endpoint,
                         "created_at": now})
