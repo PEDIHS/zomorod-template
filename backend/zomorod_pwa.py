@@ -11,6 +11,7 @@ import fcntl
 import json
 import os
 import re
+import sys
 import struct
 import zlib
 from contextlib import contextmanager
@@ -136,9 +137,22 @@ class PwaSettings(BaseModel):
 
 @router.put("/api/zomorod/pwa/admin")
 async def pwa_save_settings(settings: PwaSettings, _current: AdminDetails = Depends(_owner)):
+    if settings.push_enabled and not settings.pwa_enabled:
+        raise HTTPException(422, "Enable PWA before enabling Push")
+    if settings.push_enabled and not _can_send():
+        raise HTTPException(503, "Web Push prerequisite is not installed")
     with _locked():
         _write(CONFIG, settings.model_dump())
     return _public_config()
+
+
+@router.get("/api/zomorod/pwa/client.js")
+async def pwa_client_script():
+    path = ROOT / "python" / "zomorod-pwa-client.js"
+    if not path.is_file():
+        raise HTTPException(404, "PWA client missing")
+    return Response(path.read_bytes(), media_type="text/javascript",
+                    headers={"Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff"})
 
 
 @router.get("/api/zomorod/pwa/sw.js")
@@ -274,7 +288,14 @@ async def pwa_unsubscribe(token: str, model: DeviceSubscription, request: Reques
     return {"ok": True}
 
 
+def _load_push_dependencies():
+    dependencies = str(ROOT / "push-deps")
+    if dependencies not in sys.path:
+        sys.path.append(dependencies)
+
+
 def _can_send() -> bool:
+    _load_push_dependencies()
     try:
         from pywebpush import webpush  # noqa: F401
         return True
@@ -288,6 +309,7 @@ class Broadcast(BaseModel):
 
 
 def _send_one(device: dict, message: str, contact: str) -> int:
+    _load_push_dependencies()
     from pywebpush import WebPushException, webpush
     try:
         webpush(subscription_info=device["subscription"], data=message,
@@ -307,7 +329,7 @@ async def pwa_broadcast(payload: Broadcast, request: Request,
         raise HTTPException(403, "Push disabled")
     if not _can_send():
         raise HTTPException(503, "Web Push dependency unavailable")
-    devices = _read(DEVICES).get("devices", [])[:500]
+    devices = _read(DEVICES).get("devices", [])[:100]
     if not devices:
         return {"total": 0, "sent": 0, "failed": 0}
     message = json.dumps({"title": payload.title, "body": payload.body,
