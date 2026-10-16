@@ -428,10 +428,12 @@
 
   function findSettingsTabBar() {
     if (!isSettingsRoute()) return null;
-    const isNativeTab = (node) => node instanceof Element && node.matches('button, a, [role="tab"]') && node.id !== NAV_ID;
+    const tabSelector = 'button, a, [role="tab"]';
+    const isNativeTab = (node) => node instanceof Element && node.matches(tabSelector) && node.id !== NAV_ID;
     // PasarGuard can wrap each tab in a small element on responsive layouts.
     // Require multiple native tabs to avoid attaching to an unrelated toolbar.
     const isTabBar = (node) => node instanceof HTMLElement &&
+      node.querySelectorAll(tabSelector).length >= 1 &&
       [...node.children].reduce((count, child) => count + (isNativeTab(child) ? 1 :
         (child instanceof HTMLElement && child.childElementCount <= 3 ? [...child.children].filter(isNativeTab).length : 0)), 0) >= 2;
 
