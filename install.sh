@@ -241,6 +241,11 @@ install_cli() {
   download "$(raw_url cli/zomorod)" "${TMP_DIR}/zomorod-cli" || fail "could not download cli/zomorod"
   chmod +x "${TMP_DIR}/zomorod-cli"
   install -m 0755 "${TMP_DIR}/zomorod-cli" /usr/local/bin/zomorod
+  # Keep the matching uninstaller alongside the installed plugin so uninstall
+  # works without GitHub connectivity and does not execute a moving remote URL.
+  download "$(raw_url uninstall.sh)" "${TMP_DIR}/zomorod-uninstall" || fail "could not download uninstall.sh"
+  bash -n "${TMP_DIR}/zomorod-uninstall" || fail "invalid uninstaller received"
+  install -m 0755 "${TMP_DIR}/zomorod-uninstall" "${ZOMOROD_ROOT}/uninstall.sh"
 }
 
 configure_pasarguard() {

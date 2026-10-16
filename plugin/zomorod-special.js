@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.10.3';
+  const VERSION = '4.10.5';
   const HEADER_PREFIX = 'x-zomorod-';
   const NAV_ID = 'zomorod-special-nav';
   const ROOT_ID = 'zomorod-special-root';
@@ -20,17 +20,55 @@
   const UPDATE_NOTICE_ID = 'zomorod-update-notice';
   const UPDATE_DISMISS_PREFIX = 'zomorod-update-dismissed:';
   let maintainQueued = false;
+  let lastUiRepairAttempt = 0;
   let uiObserver = null;
   let accessResolved = false;
   let accessAllowed = false;
   let isOwner = false;
   let currentAdmin = null;
+  let sessionToken = localStorage.getItem('token') || '';
+  let accessGeneration = 0;
+  let viewRequestId = 0;
+
+  function syncSession() {
+    const next = localStorage.getItem('token') || '';
+    if (next === sessionToken) return false;
+    sessionToken = next;
+    accessGeneration += 1;
+    viewRequestId += 1;
+    clearAccessRetry();
+    stopUpdatePolling();
+    removeUi();
+    removeUpdateNotice();
+    active = false;
+    accessResolved = false;
+    accessAllowed = false;
+    isOwner = false;
+    currentAdmin = null;
+    accessResolvePromise = null;
+    accessFailures = 0;
+    cachedSettings = null;
+    cachedProfile = null;
+    cachedNamespaces = null;
+    cachedAdminProfiles = null;
+    cachedUpdate = null;
+    namespaceError = null;
+    adminProfilesError = null;
+    return true;
+  }
+
+  function assertSession(token) {
+    if (token === (localStorage.getItem('token') || '')) return;
+    const error = new Error('Account changed; request discarded');
+    error.name = 'AbortError';
+    throw error;
+  }
   let accessResolvePromise = null;
   let accessRetryTimer = null;
   let accessFailures = 0;
   const ACCESS_RETRY_BASE_MS = 600;
   const ACCESS_RETRY_MAX_MS = 12000;
-  const UI_SELF_HEAL_MS = 2000;
+  const UI_SELF_HEAL_MS = 2500;
 
   const THEME_PRESETS = [
     { id: 'emerald', label: 'زمرد سلطنتی', primary: '#C9992D', secondary: '#064C38' },
@@ -300,6 +338,7 @@
       headers.set('X-Client-Timezone', Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
       headers.set('X-Client-Timezone-Offset-Minutes', String(-new Date().getTimezoneOffset()));
       const response = await fetch(path, { ...options, headers, signal: controller.signal, cache: 'no-store' });
+      assertSession(token);
       if (!response.ok) {
         let detail = '';
         try {
@@ -311,7 +350,9 @@
         throw error;
       }
       if (response.status === 204) return null;
-      return await response.json();
+      const data = await response.json();
+      assertSession(token);
+      return data;
     } finally {
       clearTimeout(timeout);
     }
@@ -388,7 +429,11 @@
   function findSettingsTabBar() {
     if (!isSettingsRoute()) return null;
     const isNativeTab = (node) => node instanceof Element && node.matches('button, a, [role="tab"]') && node.id !== NAV_ID;
-    const isTabBar = (node) => node instanceof HTMLElement && [...node.children].some(isNativeTab);
+    // PasarGuard can wrap each tab in a small element on responsive layouts.
+    // Require multiple native tabs to avoid attaching to an unrelated toolbar.
+    const isTabBar = (node) => node instanceof HTMLElement &&
+      [...node.children].reduce((count, child) => count + (isNativeTab(child) ? 1 :
+        (child instanceof HTMLElement && child.childElementCount <= 3 ? [...child.children].filter(isNativeTab).length : 0)), 0) >= 2;
 
     const preferred = document.querySelector('.scrollbar-hide.flex.overflow-x-auto.border-b');
     if (isTabBar(preferred)) return preferred;
@@ -1153,21 +1198,28 @@
   }
 
   async function openPage() {
-    if (!accessAllowed) return;
+    syncSession();
+    const generation = accessGeneration;
+    const requestId = ++viewRequestId;
+    const admin = await resolveAccess(true);
+    if (!admin || !accessAllowed || generation !== accessGeneration || requestId !== viewRequestId) return;
     active = true;
     renderLoading();
     try {
+      // The current admin's own profile is available without settings.read.
+      const profile = await api('/api/zomorod/profile');
+      if (!active || generation !== accessGeneration || requestId !== viewRequestId) return;
+      if (Number(profile?.admin_id) !== Number(currentAdmin?.id)) throw new Error('Account profile mismatch');
+      isOwner = profile?.is_owner === true && currentAdmin?.role?.is_owner === true;
       if (isOwner) {
-        const [settings, profile] = await Promise.all([api('/api/settings'), api('/api/zomorod/profile'), loadAdminProfiles(), loadUpdateStatus()]);
-        if (!active) return;
+        const [settings] = await Promise.all([api('/api/settings'), loadAdminProfiles(), loadUpdateStatus()]);
+        if (!active || generation !== accessGeneration || requestId !== viewRequestId) return;
         renderOwner(settings, profile);
       } else {
-        const profile = await api('/api/zomorod/profile');
-        if (!active) return;
         renderReseller(profile);
       }
     } catch (error) {
-      if (!active) return;
+      if (!active || generation !== accessGeneration || requestId !== viewRequestId) return;
       console.error('[Zomorod] settings load failed', error);
       renderError(error);
     }
@@ -1211,7 +1263,25 @@
     uiObserver.observe(document.documentElement, { subtree: true, childList: true });
   }
 
+  function onUiMutations() {
+    // Dashboard tables and live counters mutate frequently. Avoid an animation
+    // frame + tab-bar scan for every unrelated DOM update across the entire SPA.
+    if (!isSettingsRoute() || !accessResolved || !accessAllowed) return;
+    const tab = document.getElementById(NAV_ID);
+    const root = document.getElementById(ROOT_ID);
+    if (!tab || !tab.isConnected || (active && (!root || !root.isConnected))) {
+      const now = Date.now();
+      if (now - lastUiRepairAttempt >= 500) {
+        lastUiRepairAttempt = now;
+        scheduleMaintain();
+      }
+    }
+    // While an existing tab is connected, a replacement tab bar can detach it
+    // without removing the node itself. The low-frequency watchdog covers that.
+  }
+
   function maintain() {
+    if (syncSession() && isSettingsRoute()) void resolveAccess(true);
     maintainQueued = false;
     uiObserver?.disconnect();
     try {
@@ -1268,13 +1338,31 @@
     }, delay);
   }
 
+  async function fetchAccessibleAdmin() {
+    try {
+      return await api('/api/admin');
+    } catch (error) {
+      // Restricted admin roles can be denied the general admin endpoint even
+      // when they can read their own Zomorod profile. Use only that authorized
+      // identity, never an optimistic tab based on a stored token alone.
+      if (Number(error?.status) !== 403 || !sessionToken) throw error;
+      const profile = await api('/api/zomorod/profile');
+      const id = Number(profile?.admin_id);
+      if (!Number.isSafeInteger(id) || id <= 0) throw error;
+      return { id, username: profile?.username || '', role: { is_owner: false }, is_owner: false };
+    }
+  }
+
   function resolveAccess(force = false) {
+    syncSession();
+    const generation = accessGeneration;
     if (accessResolvePromise) return accessResolvePromise;
     if (!force && accessResolved && accessAllowed) return Promise.resolve(currentAdmin);
 
     accessResolvePromise = (async () => {
       try {
-        const admin = await api('/api/admin');
+        const admin = await fetchAccessibleAdmin();
+        if (generation !== accessGeneration) return null;
         currentAdmin = admin;
         accessAllowed = Boolean(admin?.id || admin?.username);
         isOwner = admin?.role?.is_owner === true || admin?.is_owner === true;
@@ -1284,17 +1372,19 @@
         if (isOwner) void loadUpdateStatus(); else removeUpdateNotice();
         return admin;
       } catch (error) {
+        if (generation !== accessGeneration) return null;
         accessFailures += 1;
         const status = Number(error?.status || 0);
         if (status === 401 || status === 403) {
-          // A real auth denial is authoritative. Network/timeout errors are not:
-          // they must never permanently hide the Zomorod tab for this session.
+          // A denial must never expose the settings UI; allow a later recovery
+          // after role/session propagation, with a bounded exponential backoff.
           currentAdmin = null;
           accessAllowed = false;
           isOwner = false;
-          accessResolved = true;
-          clearAccessRetry();
+          accessResolved = !sessionToken;
           removeUi();
+          if (sessionToken) scheduleAccessRetry();
+          else clearAccessRetry();
         } else {
           if (!accessAllowed) {
             currentAdmin = null;
@@ -1305,8 +1395,10 @@
         }
         return null;
       } finally {
-        accessResolvePromise = null;
-        scheduleMaintain();
+        if (generation === accessGeneration) {
+          accessResolvePromise = null;
+          scheduleMaintain();
+        }
       }
     })();
 
@@ -1314,6 +1406,7 @@
   }
 
   function wakeUi(refreshAccess = false) {
+    refreshAccess = syncSession() || refreshAccess;
     if (isSettingsRoute() && (refreshAccess || !accessResolved)) void resolveAccess(refreshAccess);
     scheduleMaintain();
   }
@@ -1326,6 +1419,7 @@
     if (!isSettingsRoute()) active = false;
     wakeUi(true);
   });
+  window.addEventListener('storage', event => { if (event.key === 'token') wakeUi(true); });
   window.addEventListener('online', () => wakeUi(true));
   window.addEventListener('focus', () => wakeUi(!accessResolved));
   window.addEventListener('pageshow', () => wakeUi(!accessResolved));
@@ -1333,16 +1427,17 @@
     if (document.visibilityState === 'visible') wakeUi(!accessResolved);
   });
 
-  uiObserver = new MutationObserver(scheduleMaintain);
+  uiObserver = new MutationObserver(onUiMutations);
   observeUi();
 
   // MutationObserver is the fast path. This tiny settings-only watchdog covers
   // browser bfcache, React hydration races, and managed-child removals that can
   // otherwise leave the injected tab missing until the next unrelated mutation.
   setInterval(() => {
+    if (syncSession()) wakeUi(true);
     if (!isSettingsRoute()) return;
     if (!accessResolved) {
-      void resolveAccess();
+      if (!accessRetryTimer) void resolveAccess();
       return;
     }
     if (!accessAllowed) return;
