@@ -236,6 +236,9 @@ if footer_at >= 0:
     html=html[:footer_at]+footer_segment+html[footer_end:]
 html=re.sub(r'\s*<style id="zomorod-runtime-boot-style">.*?</style>\s*','\n',html,flags=re.S)
 html=re.sub(r'\s*<script id="zomorod-runtime-boot-script">.*?</script>\s*','\n',html,flags=re.S)
+# Replacing an existing boot block can leave a leading newline on later runs.
+# Normalize before reinjection so the first and subsequent passes are identical.
+html=html.lstrip('\n')
 boot='''<style id="zomorod-runtime-boot-style">
 html[data-zomorod-booting="1"] body>*:not(#zomorod-boot-screen):not(script):not(style){visibility:hidden!important}
 #zomorod-boot-screen{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:#f7f7f7;color:#202423}
