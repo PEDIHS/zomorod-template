@@ -253,10 +253,12 @@ systemctl status zomorod-integrator.timer
 ## 🗑️ Uninstall
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/PEDIHS/zomorod-template/main/uninstall.sh | sudo bash
+sudo zomorod uninstall
+# Non-interactive automation (explicit consent required):
+sudo zomorod uninstall --yes
 ```
 
-The uninstaller removes Zomorod integration files while intentionally leaving PasarGuard database settings intact.
+The CLI requires explicit confirmation. It removes only Zomorod integration, watchers, and injected assets; it preserves PasarGuard accounts and databases as well as Zomorod user data and timestamped recovery backups. PasarGuard is restarted using its official CLI to unload the old routes.
 
 ---
 

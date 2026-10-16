@@ -40,6 +40,7 @@ Usage:
   zomorod update          Update to the latest immutable main snapshot
   zomorod restart         Safely restart PasarGuard and re-apply Zomorod
   zomorod install         Install/repair Zomorod from latest main
+  zomorod uninstall       Remove only Zomorod (confirmation required)
   zomorod version         Show installed Zomorod version
   zomorod help            Show this help
 EOF
@@ -126,6 +127,23 @@ run_latest_installer() {
   ok "Zomorod ${mode} finished at ${sha:0:12}"
 }
 
+cmd_uninstall() {
+  local consent="${1:-}"
+  if [[ "$consent" != "--yes" ]]; then
+    if [[ ! -t 0 ]]; then
+      bad "Uninstall requires confirmation. Run: sudo zomorod uninstall --yes"
+      return 2
+    fi
+    warn "This removes Zomorod UI/integration, NOT PasarGuard accounts or subscriptions."
+    printf 'Type UNINSTALL to continue: '
+    local reply; read -r reply || return 1
+    [[ "$reply" == "UNINSTALL" ]] || { info "Cancelled"; return 0; }
+  fi
+  local script="${ZROOT}/uninstall.sh"
+  [[ -f "$script" ]] || { bad "Uninstaller not installed. Run zomorod install to repair files first."; return 1; }
+  run_root bash "$script" --yes
+}
+
 cmd_restart() {
   local pg
   pg="$(command -v pasarguard || true)"
@@ -203,6 +221,7 @@ interactive_menu() {
     printf '  %s3%s  Restart Zomorod / PasarGuard panel\n' "$GOLD" "$RESET"
     printf '  %s4%s  Install / Repair\n' "$GOLD" "$RESET"
     printf '  %s5%s  Version\n' "$GOLD" "$RESET"
+    printf '  %s6%s  Uninstall Zomorod\n' "$RED" "$RESET"
     printf '  %s0%s  Exit\n\n' "$MUTED" "$RESET"
     printf '%sSelect › %s' "$EMERALD_BRIGHT" "$RESET"
     read -r choice || return 0
@@ -212,6 +231,7 @@ interactive_menu() {
       3) cmd_restart; pause_menu ;;
       4) run_latest_installer install; pause_menu ;;
       5) cmd_version; pause_menu ;;
+      6) cmd_uninstall; pause_menu ;;
       0|q|Q|exit) return 0 ;;
       *) warn "Invalid selection" ;;
     esac
@@ -222,6 +242,7 @@ case "${1:-}" in
   update) shift; run_latest_installer update "$@" ;;
   install|repair) shift; run_latest_installer install "$@" ;;
   restart) shift; cmd_restart "$@" ;;
+  uninstall) shift; cmd_uninstall "$@" ;;
   status) shift; cmd_status "$@" ;;
   version) shift; cmd_version "$@" ;;
   -h|--help|help) usage ;;

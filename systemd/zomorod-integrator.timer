@@ -3,7 +3,7 @@ Description=Schedule low-impact Zomorod/PasarGuard reconciliation
 
 [Timer]
 OnBootSec=45s
-OnUnitInactiveSec=15min
+OnUnitInactiveSec=30min
 AccuracySec=1min
 RandomizedDelaySec=2min
 Unit=zomorod-integrator.service

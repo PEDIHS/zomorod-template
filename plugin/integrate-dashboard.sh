@@ -21,6 +21,22 @@ warn() { printf '[Zomorod] WARNING: %s\n' "$*" >&2; }
 compose_available() { command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; }
 admin_asset_version() { sha256sum "${ADMIN_JS}" | awk '{print substr($1,1,12)}'; }
 
+# Verify before copying: a self-heal check should not rewrite unchanged live files.
+# SHA-256 works across Docker images regardless of inode/mtime differences.
+container_file_matches() {
+  local cid="$1" source="$2" target="$3" source_hash target_hash
+  [[ -s "${source}" ]] || return 1
+  source_hash="$(sha256sum "${source}" | cut -d' ' -f1)"
+  target_hash="$(docker exec "${cid}" sha256sum "${target}" 2>/dev/null | cut -d' ' -f1 || true)"
+  [[ -n "${target_hash}" && "${source_hash}" == "${target_hash}" ]]
+}
+
+copy_container_if_changed() {
+  local cid="$1" source="$2" target="$3"
+  if container_file_matches "${cid}" "${source}" "${target}"; then return 0; fi
+  docker cp "${source}" "${cid}:${target}" >/dev/null
+}
+
 detect_backend_service() {
   [[ -f "${COMPOSE_FILE}" ]] || return 1
   compose_available || return 1
@@ -220,6 +236,9 @@ if footer_at >= 0:
     html=html[:footer_at]+footer_segment+html[footer_end:]
 html=re.sub(r'\s*<style id="zomorod-runtime-boot-style">.*?</style>\s*','\n',html,flags=re.S)
 html=re.sub(r'\s*<script id="zomorod-runtime-boot-script">.*?</script>\s*','\n',html,flags=re.S)
+# Replacing an existing boot block can leave a leading newline on later runs.
+# Normalize before reinjection so the first and subsequent passes are identical.
+html=html.lstrip('\n')
 boot='''<style id="zomorod-runtime-boot-style">
 html[data-zomorod-booting="1"] body>*:not(#zomorod-boot-screen):not(script):not(style){visibility:hidden!important}
 #zomorod-boot-screen{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:#f7f7f7;color:#202423}
@@ -312,7 +331,7 @@ patch_router_container() {
   local cid="$1" file="$2" target_dir
   [[ -s "${BACKEND_PY}" ]] || return 1
   target_dir="${file%/__init__.py}"
-  docker cp "${BACKEND_PY}" "${cid}:${target_dir}/zomorod_admin_subscriptions.py" >/dev/null
+  copy_container_if_changed "${cid}" "${BACKEND_PY}" "${target_dir}/zomorod_admin_subscriptions.py" || return 1
   docker exec -i "${cid}" python3 - "${file}" "${ROUTER_MARKER}" <<'PY'
 from pathlib import Path
 import re, sys
@@ -344,6 +363,9 @@ activate_live_docker_subscription() {
   [[ -s "${SUB_TEMPLATE}" ]] || return 1
   live_template="$(find_container_subscription_template "${cid}" || true)"
   [[ -n "${live_template}" ]] || return 1
+  if container_file_matches "${cid}" "${SUB_TEMPLATE}" "${live_template}"; then
+    return 0
+  fi
   # Compile in an isolated temporary path before touching the live HTML.
   local candidate="/tmp/zomorod-sub-preflight.html"
   docker cp "${SUB_TEMPLATE}" "${cid}:${candidate}" >/dev/null || return 1
@@ -369,7 +391,7 @@ integrate_docker() {
 
   router_init="$(find_container_router_init "${cid}" || true)"
   if [[ -n "${router_init}" && -s "${PWA_BACKEND_PY}" ]]; then
-    docker cp "${PWA_BACKEND_PY}" "${cid}:${router_init%/__init__.py}/zomorod_pwa.py" >/dev/null || warn "could not stage PWA backend in live container"
+    copy_container_if_changed "${cid}" "${PWA_BACKEND_PY}" "${router_init%/__init__.py}/zomorod_pwa.py" || warn "could not stage PWA backend in live container"
   fi
   if [[ -n "${router_init}" && -s "${BACKEND_PY}" ]]; then
     if patch_router_container "${cid}" "${router_init}"; then
@@ -384,7 +406,7 @@ integrate_docker() {
   build_dir="$(find_container_dashboard_build "${cid}" || true)"
   if [[ -n "${build_dir}" ]]; then
     docker exec "${cid}" mkdir -p "${build_dir}/statics"
-    docker cp "${ADMIN_JS}" "${cid}:${build_dir}/statics/zomorod-special.js" >/dev/null
+    copy_container_if_changed "${cid}" "${ADMIN_JS}" "${build_dir}/statics/zomorod-special.js" || return 1
     inject_theme_guard_container "${cid}" "${build_dir}/index.html"
     inject_theme_guard_container "${cid}" "${build_dir}/404.html"
     inject_admin_loader_container "${cid}" "${build_dir}/index.html"
