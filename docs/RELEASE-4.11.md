@@ -1,6 +1,15 @@
-# Zomorod Pro 4.11
+# Zomorod Pro 4.11.1
 
 Compatibility target: PasarGuard **v5.6.0**, upstream commit `2b75db15cb0019a00252c59f9d1c34e6082a121f`.
+
+## Dashboard tab persistence patch (4.11.1)
+
+- Reconcile host/container dashboard HTML loaders idempotently (replace all old script tags with a single cache-busted loader).
+- Avoid duplicate dashboard observers after repeated script execution; recover settings tab when React navigates through pushState.
+- Retry host integration promptly after boot/container recreation via a bounded systemd timer.
+- Keep authentication and role verification: a tab is created only after the authorized owner or reseller profile is resolved.
+
+This is a code-level fix; live PasarGuard restart/recreate on each deployed configuration must still be validated.
 
 ## Visible changes
 
