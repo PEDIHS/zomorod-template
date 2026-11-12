@@ -181,10 +181,14 @@ from pathlib import Path
 import re, sys
 path=Path(sys.argv[1]); marker=sys.argv[2]; version=sys.argv[3]; original=path.read_text(encoding="utf-8")
 tag=f'<script id="{marker}" src="/statics/zomorod-special.js?v={version}" defer></script>'
-pattern=re.compile(rf'<script\s+id=["\']{re.escape(marker)}["\'][^>]*>\s*</script>',re.I)
-if pattern.search(original): html=pattern.sub(tag,original,count=1)
-elif '</body>' in original: html=original.replace('</body>',f'  {tag}\n</body>',1)
-else: html=original+'\n'+tag+'\n'
+# Remove ALL previous versions of the loader, including external src tags.
+# Previous updates only replaced empty inline scripts and accumulated duplicates.
+script_pattern=re.compile(r'[ \t]*<script\b[^>]*>[\s\S]*?</script\s*>[ \t]*\n?',re.I)
+id_pattern=re.compile(r'\bid\s*=\s*["\']' + re.escape(marker) + r'["\']',re.I)
+html=script_pattern.sub(lambda m: '' if id_pattern.search(m.group(0).split('>',1)[0]) else m.group(0),original)
+body_pattern=re.compile(r'</body\s*>',re.I)
+if body_pattern.search(html): html=body_pattern.sub(lambda m:f'  {tag}\n{m.group(0)}',html,count=1)
+else: html=html.rstrip('\n')+'\n'+tag+'\n'
 if html!=original: path.write_text(html,encoding="utf-8")
 PY
 }
@@ -198,10 +202,14 @@ from pathlib import Path
 import re, sys
 path=Path(sys.argv[1]); marker=sys.argv[2]; version=sys.argv[3]; original=path.read_text(encoding="utf-8")
 tag=f'<script id="{marker}" src="/statics/zomorod-special.js?v={version}" defer></script>'
-pattern=re.compile(rf'<script\s+id=["\']{re.escape(marker)}["\'][^>]*>\s*</script>',re.I)
-if pattern.search(original): html=pattern.sub(tag,original,count=1)
-elif '</body>' in original: html=original.replace('</body>',f'  {tag}\n</body>',1)
-else: html=original+'\n'+tag+'\n'
+# Remove ALL previous versions of the loader, including external src tags.
+# Previous updates only replaced empty inline scripts and accumulated duplicates.
+script_pattern=re.compile(r'[ \t]*<script\b[^>]*>[\s\S]*?</script\s*>[ \t]*\n?',re.I)
+id_pattern=re.compile(r'\bid\s*=\s*["\']' + re.escape(marker) + r'["\']',re.I)
+html=script_pattern.sub(lambda m: '' if id_pattern.search(m.group(0).split('>',1)[0]) else m.group(0),original)
+body_pattern=re.compile(r'</body\s*>',re.I)
+if body_pattern.search(html): html=body_pattern.sub(lambda m:f'  {tag}\n{m.group(0)}',html,count=1)
+else: html=html.rstrip('\n')+'\n'+tag+'\n'
 if html!=original: path.write_text(html,encoding="utf-8")
 PY
 }
