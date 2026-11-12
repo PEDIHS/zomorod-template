@@ -11,6 +11,7 @@ export interface ParsedLink {
  * Extracts the protocol from a proxy link
  */
 export function getProtocol(link: string): ParsedLink['protocol'] {
+  link = link.trim().toLowerCase();
   if (link.startsWith('vless://')) return 'vless';
   if (link.startsWith('vmess://')) return 'vmess';
   if (link.startsWith('trojan://')) return 'trojan';
@@ -25,7 +26,9 @@ export function getProtocol(link: string): ParsedLink['protocol'] {
  */
 function decodeVmessConfig(base64Data: string): { ps?: string; add?: string; port?: string | number } | null {
   try {
-    const decoded = atob(base64Data);
+    const encoded = base64Data.split('#')[0].replace(/-/g, '+').replace(/_/g, '/');
+    const binary = atob(encoded.padEnd(Math.ceil(encoded.length / 4) * 4, '='));
+    const decoded = new TextDecoder().decode(Uint8Array.from(binary, c => c.charCodeAt(0)));
     return JSON.parse(decoded);
   } catch {
     return null;
@@ -51,9 +54,9 @@ function extractFragmentName(link: string): string {
  * Extracts name from vmess configuration
  */
 function extractVmessName(link: string): string {
-  const base64Data = link.replace('vmess://', '');
+  const base64Data = link.replace(/^vmess:\/\//i, '');
   const config = decodeVmessConfig(base64Data);
-  return config?.ps || '';
+  return typeof config?.ps === 'string' ? config.ps : '';
 }
 
 /**
@@ -63,12 +66,12 @@ function extractServerInfo(link: string, protocol: string): { server?: string; p
   try {
     // Handle vmess separately
     if (protocol === 'vmess') {
-      const base64Data = link.replace('vmess://', '');
+      const base64Data = link.replace(/^vmess:\/\//i, '');
       const config = decodeVmessConfig(base64Data);
       if (config) {
         return {
-          server: config.add?.trim(),
-          port: config.port?.toString()
+          server: typeof config.add === 'string' ? config.add.trim() : undefined,
+          port: typeof config.port === 'string' || typeof config.port === 'number' ? String(config.port) : undefined
         };
       }
       return {};

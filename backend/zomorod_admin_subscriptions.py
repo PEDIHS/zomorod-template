@@ -19,6 +19,7 @@ import asyncio
 import base64
 import fcntl
 import gzip
+import inspect
 import json
 import os
 import re
@@ -625,6 +626,8 @@ def _overlay_headers(headers: dict, admin: Admin) -> dict:
         result["profile-title"] = encode_title(profile["store_name"])
         if profile["support_url"]:
             result["support-url"] = profile["support_url"]
+        else:
+            result.pop("support-url", None)
     return result
 
 
@@ -643,6 +646,8 @@ def _overlay_response(response: Response, admin: Admin) -> Response:
         response.headers["profile-title"] = encode_title(profile["store_name"])
         if profile["support_url"]:
             response.headers["support-url"] = profile["support_url"]
+        elif "support-url" in response.headers:
+            del response.headers["support-url"]
     return response
 
 
@@ -721,6 +726,38 @@ def _public_routes(state: dict) -> list[dict]:
             }
         )
     return result
+
+
+def _compatibility_report() -> dict:
+    # Inspect public call contracts without touching users, credentials or the database.
+    from app.version import __version__ as panel_version
+
+    required = {
+        "user_subscription": {"db", "token", "request_url"},
+        "user_subscription_raw": {"db", "token", "request_url"},
+        "user_subscription_info": {"db", "token", "ip"},
+        "user_subscription_with_client_type": {"db", "token", "client_type"},
+        "get_user_usage": {"db", "token", "query"},
+    }
+    checks = {}
+    for name, parameters in required.items():
+        method = getattr(SubscriptionOperation, name, None)
+        try:
+            checks[name] = callable(method) and parameters.issubset(inspect.signature(method).parameters)
+        except (TypeError, ValueError):
+            checks[name] = False
+    return {
+        "zomorod_version": "4.11.1",
+        "panel_version": panel_version,
+        "tested_panel_version": "5.6.0",
+        "contracts_ok": all(checks.values()),
+        "checks": checks,
+    }
+
+
+@router.get("/api/zomorod/compatibility")
+async def get_zomorod_compatibility(_admin: AdminDetails = Depends(_require_admin)):
+    return _compatibility_report()
 
 
 @router.get("/api/zomorod/update-status")

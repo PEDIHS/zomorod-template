@@ -46,7 +46,7 @@ export const QRModal = memo(({ link, open, onOpenChange }: QRModalProps) => {
 
   // Keep a conservative ceiling for error-correction level L. Very large WG
   // configs should use copy/download instead of producing an unreadable QR.
-  const canGenerateQR = useMemo(() => qrValue.length <= 2900, [qrValue]);
+  const canGenerateQR = useMemo(() => new TextEncoder().encode(qrValue).length <= 2900, [qrValue]);
 
   const handleCopy = useCallback(() => {
     copyToClipboard(preparedCopyContent.content, `${link.raw}:config`);

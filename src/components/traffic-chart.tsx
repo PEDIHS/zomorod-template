@@ -4,6 +4,7 @@ import * as React from "react"
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 import { useTranslation } from "react-i18next"
 import type { TooltipProps } from "recharts"
+import { formatBytes } from '@/lib/subscriptionData'
 import { dateUtils } from "@/lib/dateFormatter"
 
 import {
@@ -24,16 +25,6 @@ const chartConfig = {
     color: "var(--primary)",
   },
 } satisfies ChartConfig
-
-const formatBytes = (bytes: number) => {
-  if (bytes === 0) return "0 B"
-
-  const k = 1024
-  const sizes = ["B", "KB", "MB", "GB", "TB"]
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-
-  return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`
-}
 
 const getDisplayUnit = (maxBytes: number) => {
   const units = [

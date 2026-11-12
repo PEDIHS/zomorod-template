@@ -1,22 +1,16 @@
 import useSWR from 'swr';
-import { fetcher, getBaseUrl } from '@/lib/fetcher';
+import { fetcher, getBaseUrl, HttpError } from '@/lib/fetcher';
 import useSWRImmutable from 'swr/immutable'
 import type { UserInfo, ConfigData, ChartData, AppClient, InfoHeaders } from '@/types/user';
 
-const getSubscriptionPath = () => window.location.pathname.replace(/\/+$/, '');
-
-const normalizeConfigLinks = (value: unknown): string[] => {
-  if (!Array.isArray(value)) return [];
-  return value
-    .filter((link): link is string => typeof link === 'string')
-    .map((link) => link.trim())
-    .filter((link) => link.length > 0 && /^[a-z][a-z0-9+.-]*:\/\//i.test(link));
-};
+import { getSubscriptionPath as normalizePath, normalizeConfigLinks, safeExternalUrl } from '@/lib/subscriptionData';
+const getSubscriptionPath = () => normalizePath(window.location.pathname);
+const retryable = (error: Error) => !(error instanceof HttpError) || ![401, 403, 404, 410].includes(error.status);
 
 export const useUserInfo = () => {
   const initial = typeof window !== 'undefined' ? window.__INITIAL_DATA__ : undefined;
   
-  const { data: response, error, isLoading, isValidating, mutate } = useSWR<{ data: UserInfo; headers: InfoHeaders }>(
+  const { data: response, error, isLoading, isValidating, mutate } = useSWR<{ data: UserInfo; headers: InfoHeaders; updatedAt: number }>(
     `${getBaseUrl()}${getSubscriptionPath()}/info`,
     fetcher,
     {
@@ -24,7 +18,8 @@ export const useUserInfo = () => {
       // This ensures the fetcher always runs and returns { data, headers } structure
       revalidateIfStale: false,
       revalidateOnMount: true, // Always fetch on mount to get headers
-      errorRetryCount: Infinity,
+      errorRetryCount: 3,
+      shouldRetryOnError: retryable,
       errorRetryInterval: 5000,
       revalidateOnFocus: true,
       revalidateOnReconnect: true,
@@ -43,7 +38,7 @@ export const useUserInfo = () => {
   
   // Use initial Jinja data only as first paint fallback.
   // Once API data arrives, it should replace the initial snapshot.
-  const data = apiData ?? initial?.user;
+  const data = error && !retryable(error) ? undefined : apiData ?? initial?.user;
   
   // Always use headers from API response (headers are only available from API, not from initial data)
   const headers = apiHeaders;
@@ -55,7 +50,7 @@ export const useUserInfo = () => {
   // Don't show loading if we have initial data
   const shouldShowLoading = isLoading && !initial?.user;
 
-  return { data, headers, error, isLoading: shouldShowLoading, isValidating, refresh: handleRefresh };
+  return { data, headers, error, updatedAt: response?.updatedAt ?? null, isLoading: shouldShowLoading, isValidating, refresh: handleRefresh };
 };
 
 type RawConfigData = {
@@ -70,13 +65,14 @@ export const useConfigData = () => {
     ? normalizeConfigLinks(window.__INITIAL_DATA__?.links)
     : [];
 
-  const { data: rawData, error, isLoading } = useSWR<RawConfigData>(
-    initialLinks.length > 0
-      ? null
-      : `${getBaseUrl()}${getSubscriptionPath()}/raw`,
+  const { data: rawData, error, isLoading, mutate } = useSWR<RawConfigData>(
+    `${getBaseUrl()}${getSubscriptionPath()}/raw`,
     fetcher,
     {
+      revalidateOnMount: initialLinks.length === 0,
+      revalidateIfStale: false,
       errorRetryCount: 3,
+      shouldRetryOnError: retryable,
       errorRetryInterval: 2500,
       revalidateOnFocus: false,
       dedupingInterval: 5000,
@@ -90,10 +86,10 @@ export const useConfigData = () => {
   // return { body: { links }, headers }. Support both so GitHub installs keep
   // showing configs regardless of the panel version.
   const fallbackLinks = normalizeConfigLinks(rawData?.body?.links ?? rawData?.links);
-  const links = initialLinks.length > 0 ? initialLinks : fallbackLinks;
-  const data: ConfigData | undefined = links.length > 0 ? { links } : undefined;
+  const links = rawData ? fallbackLinks : initialLinks;
+  const data: ConfigData | undefined = rawData || initialLinks.length > 0 ? { links } : undefined;
 
-  return { data, error, isLoading };
+  return { data, error, isLoading: isLoading && initialLinks.length === 0, refresh: mutate };
 };
 
 export const useChartData = (
@@ -101,11 +97,12 @@ export const useChartData = (
   period: string = "hour",
   shouldFetch: boolean = true
 ) => {
-  const { data: chartData, error: chartError } = useSWR<ChartData>(
+  const { data: chartData, error: chartError, mutate } = useSWR<ChartData>(
     shouldFetch ? `${getBaseUrl()}${getSubscriptionPath()}/usage?start=${startTime.toISOString()}&period=${period}` : null,
     fetcher,
     {
       errorRetryCount: 2,
+      shouldRetryOnError: retryable,
       errorRetryInterval: 2000,
       revalidateOnFocus: false,
       revalidateOnMount: shouldFetch, // Only fetch on first load if shouldFetch is true
@@ -117,7 +114,7 @@ export const useChartData = (
     }
   );
 
-  return { chartData, chartError };
+  return { chartData, chartError, refresh: mutate };
 };
 
 export const useApps = () => {
@@ -132,6 +129,7 @@ export const useApps = () => {
     fetcher,
     {
       errorRetryCount: 2,
+      shouldRetryOnError: retryable,
       errorRetryInterval: 3000,
       revalidateOnFocus: false,
       dedupingInterval: 60000,
@@ -153,5 +151,5 @@ export const useSupportUrl = () => {
   const { headers } = useUserInfo();
   const supportUrl = headers?.['support-url'];
   
-  return { supportUrl: supportUrl || null };
+  return { supportUrl: safeExternalUrl(supportUrl, true) || null };
 };

@@ -15,6 +15,21 @@
 
 Zomorod keeps the original subscription UI as the primary experience and adds a separate, persistent integration layer for PasarGuard. The dashboard integration provides a native-looking **Zomorod · Special** settings tab without introducing another management database.
 
+## Pro 4.11 update
+
+A redesigned subscription workspace with a desktop overview/connection split, mobile-first onboarding, searchable protocol filters, and explicit refresh/offline states. Custom reseller colors and light/dark modes remain supported.
+
+Fixes include aggregation of multi-series traffic, UTF-8 VMess names, truthful account status, acknowledged clipboard actions, byte-safe QR limits, WireGuard newline injection, stale settings writes, reseller support-header inheritance, subscription-link visibility and custom-path PWA launches. Random synthetic latency values are removed; latency must be measured inside the VPN client.
+
+**Compatibility target: official PasarGuard 5.6.0.** Automated tests inspect its API call contracts. This does not assert that every deployment, proxy or database combination has been integration-tested. The admin tab includes a read-only API contract report.
+
+Validation: Node 24+, `bun install --frozen-lockfile`, `bun run test`, `bun run lint`, `bun run build`. Backend contract tests: `PASARGUARD_SOURCE=/path/to/panel-v5.6.0 python3 -m unittest discover -s tests -p 'test_backend.py' -v`.
+
+Optional browser QA: install Python `jinja2`, run `bunx playwright install chromium`, `python3 tests/render_preview.py`, then `node tests/browser.mjs`. Screenshots are generated from synthetic data only. Runtime clients do not need Node.js or Python installed.
+
+---
+
+
 ## 📱 Real UI preview — Light / Dark
 
 The images below are documentation-ready captures based on the real Zomorod interface, with browser chrome and panel address elements removed for a cleaner GitHub presentation.
@@ -81,7 +96,7 @@ The connection section keeps the original template structure while allowing Zomo
 - copy and QR actions
 - Copy All
 - per-config protocol detection
-- estimated per-server ping display
+- no fabricated latency measurements
 - names, flags and server labels
 - independent control for normal configuration visibility
 

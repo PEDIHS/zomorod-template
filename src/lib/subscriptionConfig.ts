@@ -35,6 +35,7 @@ const sanitizeFileNameSegment = (value: string | null | undefined) => {
 
   return safeDecodeURIComponent(value)
     .replace(/[<>:"/\\|?*]/g, '-')
+    .split('').filter(char => char.charCodeAt(0) >= 32 && char.charCodeAt(0) !== 127).join('')
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^\.+|\.+$/g, '')
@@ -146,6 +147,9 @@ export const convertWireGuardUrlToConfig = (value: string) => {
     lines.push(`PersistentKeepalive = ${parsed.keepalive}`)
   }
 
+  // Newlines inside URI fields can otherwise inject extra configuration directives.
+  const values = Object.values(parsed);
+  if (values.some(item => item.includes('\r') || item.includes('\n') || item.includes('\0'))) return null
   return lines.join('\n')
 }
 
@@ -234,5 +238,6 @@ export const downloadTextFile = (content: string, fileName: string, mimeType = T
   document.body.appendChild(anchor)
   anchor.click()
   document.body.removeChild(anchor)
-  window.URL.revokeObjectURL(downloadUrl)
+  // Safari may start consuming the blob after the click handler returns.
+  setTimeout(() => window.URL.revokeObjectURL(downloadUrl), 1000)
 }

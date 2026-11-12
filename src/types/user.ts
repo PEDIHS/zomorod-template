@@ -24,7 +24,7 @@ export interface ProxySettings {
 
 export interface NextPlan {
   user_template_id: number;
-  data_limit: number;
+  data_limit: number | null;
   expire: number;
   add_remaining_traffic: boolean;
 }
@@ -32,7 +32,7 @@ export interface NextPlan {
 export interface UserInfo {
   proxy_settings: ProxySettings;
   expire: string | null;
-  data_limit: number;
+  data_limit: number | null;
   data_limit_reset_strategy: string;
   on_hold_expire_duration: number;
   on_hold_timeout: string | null;

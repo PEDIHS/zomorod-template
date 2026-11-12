@@ -336,7 +336,7 @@
     };
   };
 
-  const basePath = () => window.location.pathname.replace(/\/+$/, '');
+  const basePath = () => window.location.pathname.replace(/\/+$/, '').replace(/\/(?:info|raw|apps|usage)$/, '');
 
   async function fetchRaw() {
     // Consume the early head request rather than starting a second fetch
@@ -434,8 +434,10 @@
 
     const section = document.querySelector('.treasury-links-section');
     const showSection = config.showConfigs || (config.showWireGuard && hasWireGuard);
-    setDisplay(section, showSection);
-    document.querySelectorAll('.treasury-quick-action').forEach((node) => setDisplay(node, showSection));
+    const hasSubscriptionCard = Boolean(section?.querySelector('.treasury-subscription-card'));
+    document.querySelectorAll('.treasury-config-toolbar, .treasury-copy-all, .treasury-config-counter').forEach(node => setDisplay(node, showSection));
+    setDisplay(section, showSection || hasSubscriptionCard);
+    document.querySelectorAll('.treasury-quick-action').forEach((node) => setDisplay(node, showSection || hasSubscriptionCard));
 
     return hasWireGuard;
   };
@@ -445,6 +447,8 @@
   };
 
   const applyApps = (visible) => {
+    const groups = document.querySelectorAll('[data-zomorod-apps]');
+    if (groups.length) { groups.forEach(node => setDisplay(node, visible)); return; }
     document.querySelectorAll('.treasury-section-title').forEach((title) => {
       const text = title.textContent || '';
       if (!/اپلیکیشن|application/i.test(text)) return;

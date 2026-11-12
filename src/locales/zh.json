@@ -128,5 +128,44 @@
       "androidtv": "Android TV",
       "other": "其他"
     }
+  },
+  "pro": {
+    "brand": "Zomorod",
+    "personalSpace": "您的专属空间",
+    "mySubscription": "我的订阅",
+    "serviceOverview": "服务概览",
+    "accountDetails": "订阅详情",
+    "connectTitle": "准备好连接了吗？",
+    "getStarted": "只需三个步骤",
+    "connectDescription": "一个链接包含所有服务器。将其导入应用，即可通过同一订阅获取配置更新。",
+    "copySubscription": "复制订阅链接",
+    "copyStep": "复制链接",
+    "openStep": "打开应用",
+    "importStep": "导入订阅",
+    "refresh": "刷新",
+    "retry": "重试",
+    "synced": "信息已更新",
+    "syncing": "正在更新…",
+    "offline": "网络已断开，显示最后获取的信息。",
+    "stale": "刷新失败，显示之前的信息。",
+    "unavailable": "无法加载订阅。请检查网络和订阅链接。",
+    "startsOnUse": "首次连接时开始计时",
+    "nextPlan": "下个套餐",
+    "appsDescription": "选择适合您设备的应用",
+    "connectionCount": "订阅中有 {{count}} 个配置",
+    "searchConfigs": "搜索名称或服务器…",
+    "filterProtocol": "筛选协议",
+    "allProtocols": "全部",
+    "noMatches": "没有匹配的配置。",
+    "configuration": "订阅配置",
+    "testInApp": "请在 VPN 应用中测试延迟。浏览器无法测量此配置的实际延迟。",
+    "configError": "无法加载配置，订阅链接仍可使用。",
+    "description": {
+      "active": "服务信息和连接选项，尽在此处。",
+      "disabled": "服务已停用，请联系支持。",
+      "limited": "流量已用完，请续订。",
+      "expired": "订阅已到期。",
+      "on_hold": "首次连接后订阅开始计时。"
+    }
   }
 }

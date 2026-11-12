@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Copy, Check, ScanQrCode, Link2 } from 'lucide-react';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { QRModal } from '@/components/qr-modal';
+import { getSubscriptionPath } from '@/lib/subscriptionData';
 import { cn } from '@/lib/utils';
 import type { ParsedLink } from '@/lib/linkParser';
 
@@ -14,9 +15,9 @@ export const ProminentSubscriptionLink = memo(({ hasChart }: ProminentSubscripti
   const { t } = useTranslation();
   const { copyToClipboard, isCopied } = useCopyToClipboard();
   const [qrModalOpen, setQrModalOpen] = useState(false);
-  
-  const subscriptionUrl = useMemo(() => 
-    `${window.location.origin}${window.location.pathname.replace(/\/info$/, '')}`, 
+
+  const subscriptionUrl = useMemo(() =>
+    `${window.location.origin}${getSubscriptionPath(window.location.pathname)}`,
     []
   );
 
@@ -47,7 +48,7 @@ export const ProminentSubscriptionLink = memo(({ hasChart }: ProminentSubscripti
             {t('config.title')}
           </h2>
         </div>
-        
+
         <div className="ios-grouped-list">
         <div className="ios-list-row ios-list-row-featured">
           <div className="flex items-center gap-2">
@@ -55,7 +56,7 @@ export const ProminentSubscriptionLink = memo(({ hasChart }: ProminentSubscripti
             <div className="ios-protocol-badge">
               SUB
             </div>
-            
+
             {/* Name */}
             <div className="page-item-title flex-1 min-w-0 truncate">
               {t('config.subscriptionLink')}
@@ -74,7 +75,7 @@ export const ProminentSubscriptionLink = memo(({ hasChart }: ProminentSubscripti
                   <Copy className="w-3.5 h-3.5" />
                 )}
               </button>
-              
+
               <button
                 onClick={handleShowQR}
                 className="ios-row-action"

@@ -18,6 +18,7 @@ export const useRelativeExpiryDate = (expiryDate: string | number | null | undef
   if (!expiryDate) return dateInfo
 
   const target = dateUtils.toDayjs(expiryDate)
+  if (!target.isValid()) return { status: '', time: '—', isExpired: false }
   const now = dayjs()
 
   const isAfter = target.isAfter(now)
@@ -73,6 +74,7 @@ export const formatTimeAgo = (
   }
 
   const lastOnlineTime = dateUtils.toDayjs(dateString)
+  if (!lastOnlineTime.isValid()) return { text: t('notConnectedYet'), isOnline: false }
   const now = dayjs()
   const diffInSeconds = Math.abs(now.diff(lastOnlineTime, 'second'))
 
@@ -115,11 +117,12 @@ export const formatRelativeExpiry = (
   expiryDate: string | number | null | undefined,
   t: (key: string) => string
 ): { status: string; time: string; isExpired: boolean } => {
-  if (!expiryDate || expiryDate === 0) {
+  if (!expiryDate || expiryDate === 0 || expiryDate === '0') {
     return { status: '', time: t('userInfo.noTimeLimit'), isExpired: false }
   }
 
   const target = dateUtils.toDayjs(expiryDate)
+  if (!target.isValid()) return { status: '', time: '—', isExpired: false }
   const now = dayjs()
 
   const isAfter = target.isAfter(now)

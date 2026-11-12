@@ -27,7 +27,7 @@ const FooterContent = () => {
       )}
       <p className="inline-block flex-grow text-center text-xs text-muted-foreground lg:px-4">
         Powered by &nbsp;
-        <span className="font-semibold text-primary">ganj</span>
+        <span className="font-semibold text-primary">Zomorod</span>
       </p>
     </div>
   );
