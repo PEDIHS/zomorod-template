@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.10.5';
+  const VERSION = '4.11.0';
   const HEADER_PREFIX = 'x-zomorod-';
   const NAV_ID = 'zomorod-special-nav';
   const ROOT_ID = 'zomorod-special-root';
@@ -1040,6 +1040,7 @@
           ${ownerAnnouncementFields}
         </div></section>
       </div>
+      <section class="z-card"><h3 class="z-card-title">سلامت و سازگاری</h3><p class="z-card-note" id="z-compatibility" role="status">در حال بررسی نسخه و API پاسارگارد…</p></section>
       <div class="z-actions"><span class="z-status" id="z-status">آماده ذخیره</span><button class="z-save" id="z-save">Save Zomorod Settings</button></div>`;
 
     const root = mountShell(html);
@@ -1049,6 +1050,20 @@
     bindAdminProfileActions(root);
     bindAppearance(root, cfg);
     void bindPwaSettings(root);
+    void bindCompatibility(root);
+  }
+
+  async function bindCompatibility(root) {
+    const node = root?.querySelector('#z-compatibility');
+    if (!node) return;
+    try {
+      const report = await api('/api/zomorod/compatibility');
+      if (!node.isConnected) return;
+      node.textContent = `Zomorod ${report.zomorod_version} · PasarGuard ${report.panel_version} · ${report.contracts_ok ? 'قراردادهای API سالم است ✓' : 'نیاز به بررسی سازگاری API'}`;
+      node.style.color = report.contracts_ok ? 'var(--success, currentColor)' : 'var(--destructive)';
+    } catch (_) {
+      if (node.isConnected) node.textContent = 'گزارش سازگاری در دسترس نیست؛ نسخهٔ Backend زمرد را بررسی کنید.';
+    }
   }
 
   function renderOwner(settings, profilePayload = cachedProfile) {
@@ -1098,6 +1113,7 @@
         theme_secondary: themeFormValues().secondary,
       };
 
+      settings = await api('/api/settings');
       settings.subscription ||= {};
       const subscription = settings.subscription;
       const responseHeaders = { ...(subscription.response_headers || {}) };
@@ -1112,10 +1128,8 @@
       subscription.manual_sub_request.links = checked('z-native-links');
       subscription.manual_sub_request.wireguard = checked('z-native-wg');
 
-      const [updatedSettings, updatedProfile] = await Promise.all([
-        api('/api/settings', { method: 'PUT', body: JSON.stringify(settings) }),
-        api('/api/zomorod/profile', { method: 'PUT', body: JSON.stringify(scopedPayload) }),
-      ]);
+      const updatedProfile = await api('/api/zomorod/profile', { method: 'PUT', body: JSON.stringify(scopedPayload) });
+      const updatedSettings = await api('/api/settings', { method: 'PUT', body: JSON.stringify(settings) });
       cachedSettings = updatedSettings;
       cachedProfile = updatedProfile;
       await loadAdminProfiles();

@@ -15,7 +15,7 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (clients) => {
-    const current = clients.find(c => new URL(c.url).origin === self.location.origin && new URL(c.url).pathname.startsWith('/sub/'));
+    const current = clients.find(c => new URL(c.url).origin === self.location.origin && new URL(c.url).pathname.startsWith(new URL(self.registration.scope).pathname));
     if (current) return current.focus();
     // Never embed a subscription token in the notification payload.
     return self.clients.openWindow('/');

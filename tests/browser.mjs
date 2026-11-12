@@ -1,0 +1,78 @@
+/** Optional end-to-end checks against the rendered production template. No live account is used. */
+import { createServer } from 'node:http';
+import { readFile, mkdir } from 'node:fs/promises';
+import { once } from 'node:events';
+import assert from 'node:assert/strict';
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const fixture = JSON.parse(await readFile(new URL('../dist/fixture.json', import.meta.url), 'utf8'));
+const html = await readFile(new URL('../dist/preview.html', import.meta.url));
+const prefix = '/custom-sub/store/demo-token';
+let infoStatus = 200, usageStatus = 200, showApps = true, showConfigs = true;
+const errors = [];
+const now = new Date();
+const day = d => new Date(now.getTime() - d * 86400000).toISOString();
+const stats = { 1: [{ period_start: day(2), total_traffic: 1024 ** 3 }, { period_start: day(1), total_traffic: 1.5 * 1024 ** 3 }], 2: [{ period_start: day(2), total_traffic: 2 * 1024 ** 3 }, { period_start: day(1), total_traffic: 3.5 * 1024 ** 3 }] };
+const headers = () => ({ 'x-zomorod-store-name-b64': Buffer.from('زمرد').toString('base64'), 'x-zomorod-show-configs': String(showConfigs), 'x-zomorod-show-wireguard': 'true', 'x-zomorod-show-apps': String(showApps), 'x-zomorod-show-announcement': 'true', 'announce': 'base64:' + Buffer.from('به فضای اختصاصی خودت خوش آمدی. راه‌های اتصال و اطلاعات سرویس، همیشه اینجاست.').toString('base64') });
+const server = createServer((req, res) => {
+  const path = new URL(req.url, 'http://localhost').pathname;
+  const json = (body, status = 200, extra = {}) => { res.writeHead(status, { 'Content-Type': 'application/json', ...extra }); res.end(JSON.stringify(body)); };
+  if (path === prefix + '/info') return json(fixture.user, infoStatus, { announce: headers().announce });
+  if (path === prefix + '/raw') return json({ body: { links: fixture.links }, headers: headers() });
+  if (path === prefix + '/usage') return json({ stats, period: 'day' }, usageStatus);
+  if (path === prefix + '/apps') return json(fixture.apps);
+  if (path === prefix || path === prefix + '/') { res.writeHead(200, { 'Content-Type': 'text/html' }); return res.end(html); }
+  res.writeHead(404); res.end();
+});
+server.listen(0, '127.0.0.1'); await once(server, 'listening');
+const origin = `http://127.0.0.1:${server.address().port}`;
+const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_EXECUTABLE });
+const context = await browser.newContext({ viewport: { width: 1440, height: 1100 }, permissions: ['clipboard-read', 'clipboard-write'], locale: 'fa-IR' });
+const page = await context.newPage();
+page.on('pageerror', error => errors.push(error.message));
+await page.route('https://example.com/icon.svg', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" rx="12" fill="#146b52"/></svg>' }));
+await page.addInitScript(() => { localStorage.setItem('template-lang', 'fa'); localStorage.setItem('zomorod-theme', 'light'); });
+try {
+  await page.goto(origin + prefix);
+  await page.waitForSelector('[data-zomorod="active"]');
+  await page.waitForFunction(() => document.querySelectorAll('.treasury-config-card').length === 4);
+  await page.waitForFunction(() => document.querySelector('.treasury-chart-total')?.textContent.includes('8.00 GB'));
+  assert.ok((await page.locator('#account-status').textContent()).includes('فعال'));
+  assert.ok(!(await page.locator('#account-status').textContent()).includes('متصل'));
+  assert.ok(!(await page.locator('.treasury-server-ping').allTextContents()).some(text => /\d+\s*ms/.test(text)));
+  await page.locator('.pro-config-search input').fill('هلند');
+  assert.equal(await page.locator('.treasury-config-card').count(), 1);
+  await page.locator('.pro-config-search input').fill('');
+  await page.locator('.pro-protocol-filters button').filter({ hasText: 'VLESS' }).click();
+  assert.equal(await page.locator('.treasury-config-card').count(), 1);
+  await page.locator('.pro-protocol-filters button').first().click();
+  await page.locator('.treasury-copy-all').click();
+  await page.waitForFunction(() => document.querySelector('.treasury-copy-all')?.classList.contains('is-success'));
+  assert.ok((await page.evaluate(() => navigator.clipboard.readText())).includes('wireguard://'));
+  await page.locator('.treasury-config-card .treasury-link-actions button:last-child').first().click();
+  await page.waitForSelector('[role="dialog"]');
+  assert.equal(await page.locator('[role="dialog"] svg[role="img"]').count(), 1);
+  await page.keyboard.press('Escape');
+  await mkdir(new URL('../screenshots', import.meta.url), { recursive: true });
+  await page.screenshot({ path: new URL('../screenshots/pro-light-desktop.png', import.meta.url).pathname, fullPage: true });
+  await page.evaluate(() => document.documentElement.classList.add('dark'));
+  await page.screenshot({ path: new URL('../screenshots/pro-dark-desktop.png', import.meta.url).pathname, fullPage: true });
+  await page.evaluate(() => document.documentElement.classList.remove('dark'));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: new URL('../screenshots/pro-light-mobile.png', import.meta.url).pathname, fullPage: true });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'mobile must not overflow horizontally');
+  showApps = false;
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('[data-zomorod-apps]')).display === 'none');
+  showConfigs = false;
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await page.waitForFunction(() => [...document.querySelectorAll('.treasury-config-card')].filter(node => getComputedStyle(node).display !== 'none').length === 1);
+  assert.ok(await page.locator('.treasury-subscription-card').isVisible(), 'subscription link survives hidden raw configurations');
+  infoStatus = 404;
+  await page.locator('.pro-refresh').click();
+  await page.waitForSelector('.pro-gate');
+  assert.equal(await page.locator('.pro-identity').count(), 0, 'revoked subscriptions must not retain the initial account display');
+  assert.deepEqual(errors, []);
+  console.log('Browser QA passed: native Jinja render, multi-node chart, truthful status, UTF-8 search, protocol filter, clipboard, QR, light/dark, mobile layout, runtime visibility, revoked token.');
+} finally {
+  await context.close(); await browser.close(); server.close();
+}

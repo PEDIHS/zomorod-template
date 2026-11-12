@@ -128,5 +128,44 @@
       "androidtv": "Android TV",
       "other": "Other"
     }
+  },
+  "pro": {
+    "brand": "Zomorod",
+    "personalSpace": "YOUR PERSONAL SPACE",
+    "mySubscription": "My subscription",
+    "serviceOverview": "Service overview",
+    "accountDetails": "Subscription details",
+    "connectTitle": "Ready to connect?",
+    "getStarted": "THREE SIMPLE STEPS",
+    "connectDescription": "One link for every server. Add it to your preferred app to receive configuration updates from the same subscription.",
+    "copySubscription": "Copy subscription link",
+    "copyStep": "Copy your link",
+    "openStep": "Open your app",
+    "importStep": "Import subscription",
+    "refresh": "Refresh",
+    "retry": "Try again",
+    "synced": "Information is up to date",
+    "syncing": "Updating…",
+    "offline": "Offline. Showing the last available information.",
+    "stale": "Could not refresh. Showing previously received information.",
+    "unavailable": "This subscription could not be loaded. Check your connection and subscription link.",
+    "startsOnUse": "Starts on first connection",
+    "nextPlan": "Next plan",
+    "appsDescription": "Choose the right app for your device",
+    "connectionCount": "{{count}} configurations in this subscription",
+    "searchConfigs": "Search name or server…",
+    "filterProtocol": "Filter protocol",
+    "allProtocols": "All",
+    "noMatches": "No configurations match your search.",
+    "configuration": "Subscription configuration",
+    "testInApp": "Test latency in your VPN app. Browsers cannot measure the actual latency of this configuration.",
+    "configError": "Configurations could not be loaded. Your subscription link is still available.",
+    "description": {
+      "active": "Your service details and connection options, in one place.",
+      "disabled": "This service is disabled. Contact support for help.",
+      "limited": "Your traffic allowance is depleted. Renew to continue.",
+      "expired": "This subscription has expired.",
+      "on_hold": "Your subscription starts on the first connection."
+    }
   }
 }

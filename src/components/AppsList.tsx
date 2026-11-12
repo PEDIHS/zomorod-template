@@ -2,6 +2,7 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next'
 import { useApps } from '@/hooks/useUserData'
+import { safeExternalUrl } from '@/lib/subscriptionData'
 import { cn } from '@/lib/utils'
 import { detectOS, getPlatformPriority, mapOSToPlatform } from '@/lib/osDetector'
 import { Download, DownloadCloud, Monitor, Tv } from 'lucide-react'
@@ -234,10 +235,10 @@ const AppCard = React.memo(function AppCard({ app, desc, dlToShow, fallbackIcon:
             <div className="mt-auto">
                 <div className="flex flex-wrap gap-1">
                     {/* Download links for current language */}
-                    {dlToShow.map((dl, i) => (
+                    {dlToShow.filter(dl => safeExternalUrl(dl.url)).map((dl, i) => (
                         <a
                             key={i}
-                            href={dl.url}
+                            href={safeExternalUrl(dl.url)}
                             className="ios-app-button"
                             target="_blank"
                             rel="noreferrer"
@@ -249,9 +250,9 @@ const AppCard = React.memo(function AppCard({ app, desc, dlToShow, fallbackIcon:
                     ))}
 
                     {/* Import link with primary color */}
-                    {app.import_url && (
+                    {safeExternalUrl(app.import_url, true) && (
                         <a
-                            href={app.import_url}
+                            href={safeExternalUrl(app.import_url, true)}
                             className="ios-app-button is-primary"
                             target="_blank"
                             rel="noreferrer"

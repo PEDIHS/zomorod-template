@@ -10,6 +10,7 @@ import base64
 import fcntl
 import json
 import os
+import posixpath
 import re
 import sys
 import struct
@@ -18,7 +19,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, unquote
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -165,13 +166,24 @@ async def pwa_service_worker():
     })
 
 
+def _safe_manifest_start(start: str) -> str:
+    if len(start) > 2048 or any(char in start for char in "?#\\"):
+        return SUB_SCOPE
+    decoded = unquote(start)
+    if any(ord(char) < 32 or char == "\\" for char in decoded):
+        return SUB_SCOPE
+    normalized = posixpath.normpath(decoded)
+    if not start.startswith(SUB_SCOPE) or not normalized.startswith(SUB_SCOPE):
+        return SUB_SCOPE
+    return start
+
+
 @router.get("/api/zomorod/pwa/manifest.webmanifest")
 async def pwa_manifest(start: str = ""):
     if not _config()["pwa_enabled"]:
         raise HTTPException(404, "PWA disabled")
     # Manifest paths are always same-origin and constrained to subscription URLs.
-    if not start.startswith(SUB_SCOPE) or start.startswith("//") or any(x in start for x in "?#\\"):
-        start = SUB_SCOPE
+    start = _safe_manifest_start(start)
     return JSONResponse({
         "id": "/zomorod", "name": "زمرد", "short_name": "زمرد",
         "lang": "fa", "dir": "rtl", "display": "standalone", "orientation": "any",

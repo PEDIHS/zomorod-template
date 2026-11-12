@@ -1,6 +1,6 @@
-import { useState, memo, useMemo, useCallback, useRef } from 'react';
+import { useState, memo, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Copy, Check, ScanQrCode, Files, Download, Radio, Server, ShieldCheck, Signal } from 'lucide-react';
+import { Copy, Check, ScanQrCode, Files, Download, Radio, Server, ShieldCheck, Signal, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { parseLinks, type ParsedLink } from '@/lib/linkParser';
@@ -11,6 +11,7 @@ import {
 } from '@/lib/subscriptionConfig';
 import { QRModal } from '@/components/qr-modal';
 import { useDir } from '@/hooks/useDir';
+import { getSubscriptionPath } from '@/lib/subscriptionData';
 import { cn } from '@/lib/utils';
 
 interface ConnectionLinksProps {
@@ -23,24 +24,21 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
   const { copyToClipboard, isCopied } = useCopyToClipboard();
   const [selectedLink, setSelectedLink] = useState<ParsedLink | null>(null);
   const [qrModalOpen, setQrModalOpen] = useState(false);
-  const [copyAllSuccess, setCopyAllSuccess] = useState(false);
-  const copyAllTimeoutRef = useRef<number | null>(null);
-
-  // Memoize parsed links to avoid re-parsing on every render
+  const [query, setQuery] = useState('');
+  const [protocolFilter, setProtocolFilter] = useState('all');
   const parsedLinks = useMemo(() => parseLinks(links), [links]);
-  const serverPings = useMemo(
-    () => parsedLinks.map((link) => {
-      const seed = Array.from(link.raw).reduce((hash, character) => ((hash * 31) + character.charCodeAt(0)) | 0, 17);
-      return 100 + (Math.abs(seed) % 81);
-    }),
-    [parsedLinks]
-  );
+  const protocols = useMemo(() => [...new Set(parsedLinks.map(link => link.protocol))], [parsedLinks]);
+  const filteredLinks = useMemo(() => parsedLinks.filter(link =>
+    (protocolFilter === 'all' || link.protocol === protocolFilter) &&
+    `${link.name} ${link.server || ''} ${link.protocol}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())
+  ), [parsedLinks, query, protocolFilter]);
+  const copyAllSuccess = isCopied('all-configs');
 
   // Memoize subscription URL to avoid recalculating on every render.
   // Strip both a trailing slash and an accidental /info suffix so format URLs
   // such as /wireguard never end up with a double slash.
   const subscriptionUrl = useMemo(() => {
-    const path = window.location.pathname.replace(/\/+$/, '').replace(/\/info$/, '');
+    const path = getSubscriptionPath(window.location.pathname);
     return `${window.location.origin}${path}`;
   }, []);
 
@@ -55,9 +53,9 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
 
   // Memoize all configs text to avoid recalculating on every render
   const allConfigsText = useMemo(() => {
-    const allConfigs = parsedLinks.map(link => link.raw);
+    const allConfigs = filteredLinks.map(link => link.raw);
     return allConfigs.join('\n');
-  }, [parsedLinks]);
+  }, [filteredLinks]);
 
   const handleCopy = useCallback((link: ParsedLink) => {
     const prepared = prepareSubscriptionContentForCopy(link.raw);
@@ -73,20 +71,9 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
     setQrModalOpen(true);
   }, []);
 
-  const handleCopyAll = useCallback(() => {
-    // Clear any existing timeout
-    if (copyAllTimeoutRef.current) {
-      clearTimeout(copyAllTimeoutRef.current);
-    }
-
+  const handleCopyAll = useCallback(async () => {
     const prepared = prepareSubscriptionContentForCopy(allConfigsText);
-    copyToClipboard(prepared.content, allConfigsText);
-    setCopyAllSuccess(true);
-
-    // Debounce the success state reset
-    copyAllTimeoutRef.current = setTimeout(() => {
-      setCopyAllSuccess(false);
-    }, 2000);
+    await copyToClipboard(prepared.content, 'all-configs');
   }, [copyToClipboard, allConfigsText]);
 
   const handleDownloadWireGuard = useCallback((link: ParsedLink) => {
@@ -127,12 +114,13 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
           <span><Radio className="size-5" aria-hidden="true" /></span>
           <div>
             <h2>{t('config.title')}</h2>
-            <p>{dir === 'rtl' ? `${parsedLinks.length.toLocaleString('fa-IR')} اتصال آماده` : `${parsedLinks.length} connections ready`}</p>
+            <p className="treasury-config-counter">{t('pro.connectionCount', { count: parsedLinks.length })}</p>
           </div>
         </div>
         <button
           type="button"
           onClick={handleCopyAll}
+          disabled={filteredLinks.length === 0}
           className={cn('treasury-copy-all', copyAllSuccess && 'is-success')}
           title={copyAllSuccess ? t('apps.copyAllSuccess') : t('apps.copyAll')}
         >
@@ -185,8 +173,15 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
         </a>
       )}
 
+      <div className="treasury-config-toolbar">
+        <label className="pro-config-search"><Search className="size-4" aria-hidden="true" /><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder={t('pro.searchConfigs')} aria-label={t('pro.searchConfigs')} /></label>
+        <div className="pro-protocol-filters" aria-label={t('pro.filterProtocol')}>
+          {['all', ...protocols].map(protocol => <button key={protocol} type="button" aria-pressed={protocolFilter === protocol} onClick={() => setProtocolFilter(protocol)}>{protocol === 'all' ? t('pro.allProtocols') : getProtocolBadge(protocol as ParsedLink['protocol']).toUpperCase()}</button>)}
+        </div>
+        {filteredLinks.length === 0 && <p className="pro-config-message" role="status">{t('pro.noMatches')}</p>}
+      </div>
       <div className="treasury-config-grid">
-        {parsedLinks.map((link, index) => {
+        {filteredLinks.map((link, index) => {
           const copied = isCopied(`${link.raw}:config`);
           const protocol = getProtocolBadge(link.protocol);
 
@@ -200,11 +195,11 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
                   {link.emoji && <span className="treasury-config-emoji">{link.emoji}</span>}
                 </div>
                 <strong dir="ltr" className={cn(dir === 'rtl' ? 'text-right' : 'text-left')}>{link.name}</strong>
-                <small>{dir === 'rtl' ? 'آماده اتصال امن' : 'Secure connection ready'}</small>
+                <small dir="ltr">{link.server || t('pro.configuration')}</small>
               </div>
-              <div className="treasury-server-ping" title={dir === 'rtl' ? 'پینگ تقریبی سرور' : 'Estimated server ping'}>
+              <div className="treasury-server-ping" title={t('pro.testInApp')}>
                 <Signal className="size-3.5" aria-hidden="true" />
-                <b dir="ltr">{serverPings[index]} ms</b>
+                <b aria-label={t('pro.testInApp')}>—</b>
               </div>
               <div className="treasury-link-actions">
                 {link.protocol === 'wireguard' && (
