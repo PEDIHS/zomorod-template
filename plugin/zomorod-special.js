@@ -1,7 +1,11 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.11.0';
+  // Avoid duplicate observers and watchdogs if an old loader is still cached.
+  if (window.__zomorodSpecialInitialized) return;
+  window.__zomorodSpecialInitialized = true;
+
+  const VERSION = '4.11.1';
   const HEADER_PREFIX = 'x-zomorod-';
   const NAV_ID = 'zomorod-special-nav';
   const ROOT_ID = 'zomorod-special-root';
@@ -21,6 +25,7 @@
   const UPDATE_DISMISS_PREFIX = 'zomorod-update-dismissed:';
   let maintainQueued = false;
   let lastUiRepairAttempt = 0;
+  let lastObservedPanelPath = '';
   let uiObserver = null;
   let accessResolved = false;
   let accessAllowed = false;
@@ -1280,6 +1285,14 @@
   }
 
   function onUiMutations() {
+    // React pushState changes don't emit popstate. Detect route changes from
+    // the dashboard render to refresh owner/reseller access and reattach tabs.
+    const panelPath = currentPanelPath();
+    if (panelPath !== lastObservedPanelPath) {
+      lastObservedPanelPath = panelPath;
+      wakeUi(true);
+      return;
+    }
     // Dashboard tables and live counters mutate frequently. Avoid an animation
     // frame + tab-bar scan for every unrelated DOM update across the entire SPA.
     if (!isSettingsRoute() || !accessResolved || !accessAllowed) return;
