@@ -747,7 +747,7 @@ def _compatibility_report() -> dict:
         except (TypeError, ValueError):
             checks[name] = False
     return {
-        "zomorod_version": "4.11.0",
+        "zomorod_version": "4.11.1",
         "panel_version": panel_version,
         "tested_panel_version": "5.6.0",
         "contracts_ok": all(checks.values()),
