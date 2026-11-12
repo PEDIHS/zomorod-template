@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 SCRIPT = (Path(__file__).resolve().parents[1] / "plugin/integrate-dashboard.sh").read_text(encoding="utf-8")
-LOADER_PROGRAMS = re.findall(r"inject_admin_loader(?:_container)?\\(\\) \\{.*?<<'PY'\\n(.*?)\\nPY", SCRIPT, re.S)
+LOADER_PROGRAMS = re.findall(r"inject_admin_loader(?:_container)?\(\) \{.*?<<'PY'\n(.*?)\nPY", SCRIPT, re.S)
 
 
 class DashboardLoaderTests(unittest.TestCase):
@@ -17,11 +17,11 @@ class DashboardLoaderTests(unittest.TestCase):
             with self.subTest(loader=index), tempfile.TemporaryDirectory() as directory:
                 html = Path(directory) / "index.html"
                 html.write_text(
-                    '<!doctype html><html><body><div id="app"></div>\\n'
-                    '<script id="zomorod-special-loader" src="/statics/zomorod-special.js?v=old" defer></script>\\n'
-                    '<script data-test="keep">window.keep = true;</script>\\n'
-                    '<script id="zomorod-special-loader" src="/statics/zomorod-special.js?v=stale" defer></script>\\n'
-                    '</body></html>\\n', encoding="utf-8"
+                    '<!doctype html><html><body><div id="app"></div>\n'
+                    '<script id="zomorod-special-loader" src="/statics/zomorod-special.js?v=old" defer></script>\n'
+                    '<script data-test="keep">window.keep = true;</script>\n'
+                    '<script id="zomorod-special-loader" src="/statics/zomorod-special.js?v=stale" defer></script>\n'
+                    '</body></html>\n', encoding="utf-8"
                 )
                 def reconcile():
                     subprocess.run(
