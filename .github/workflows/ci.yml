@@ -43,7 +43,7 @@ jobs:
       - name: Check official PasarGuard 5.6.0 API contracts
         run: |
           git clone --quiet --depth 1 --branch v5.6.0 https://github.com/PasarGuard/panel.git "$RUNNER_TEMP/pasarguard-contract"
-          PASARGUARD_SOURCE="$RUNNER_TEMP/pasarguard-contract" python3 -m unittest discover -s tests -p 'test_backend.py' -v
+          PASARGUARD_SOURCE="$RUNNER_TEMP/pasarguard-contract" python3 -m unittest discover -s tests -p 'test_*.py' -v
 
       - name: Build subscription UI
         run: bun run build
